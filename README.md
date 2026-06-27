@@ -7,6 +7,35 @@ deck in PowerPoint.
 Built in Rust with the [Slint](https://slint.dev) GUI toolkit. Search is
 fuzzy and diacritic-insensitive, so typing `plecati` finds *Plecaţi-vă*.
 
+## Install
+
+Prebuilt executables are published on the
+[Releases](https://github.com/AbelHristodor/sda_manager/releases) page for
+macOS (Apple Silicon), Windows (x86_64), and Linux (x86_64).
+
+**macOS / Linux:**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/AbelHristodor/sda_manager/main/install.sh | sh
+```
+
+Installs `hymnal-gui` to `~/.local/bin` (override with `BIN_DIR=…`). On macOS
+the binary is unsigned, so the first launch needs a right-click → **Open** in
+Finder to pass Gatekeeper.
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/AbelHristodor/sda_manager/main/install.ps1 | iex
+```
+
+Installs `hymnal-gui.exe` to `%LOCALAPPDATA%\Programs\hymnal-gui` and adds it to
+your user `PATH`.
+
+> Releases are produced manually (the **Release** workflow is run from the
+> Actions tab with a version like `v0.1.0`). The install one-liners fetch the
+> latest release, so they work only after the first release has been published.
+
 ## Workspace layout
 
 ```

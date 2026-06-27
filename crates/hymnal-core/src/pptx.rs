@@ -10,6 +10,8 @@ pub struct ParsedPptx {
     pub number: Option<u32>,
     pub title: String,
     pub body: String,
+    /// Text of each slide (paragraphs joined by `\n`), in presentation order.
+    pub slides: Vec<String>,
 }
 
 /// Extract searchable text from a .pptx file.
@@ -43,21 +45,24 @@ pub fn extract(path: &Path) -> Result<ParsedPptx> {
         .collect();
     slide_names.sort_by_key(|n| slide_index(n));
 
-    let mut all_lines: Vec<String> = Vec::new();
+    let mut slides: Vec<String> = Vec::with_capacity(slide_names.len());
     let mut first_slide_lines: Vec<String> = Vec::new();
     for (idx, name) in slide_names.iter().enumerate() {
         let mut xml = String::new();
         zip.by_name(name)?.read_to_string(&mut xml)?;
-        let lines = slide_text_lines(&xml)?;
+        let lines: Vec<String> = slide_text_lines(&xml)?
+            .into_iter()
+            .filter(|l| !is_chrome(l))
+            .collect();
         if idx == 0 {
             first_slide_lines = lines.clone();
         }
-        all_lines.extend(lines);
+        slides.push(lines.join("\n"));
     }
 
     let title = pick_title(&first_slide_lines);
-    let body = all_lines.join("\n");
-    Ok(ParsedPptx { number, title, body })
+    let body = slides.join("\n");
+    Ok(ParsedPptx { number, title, body, slides })
 }
 
 /// Numeric slide index from "ppt/slides/slide12.xml" -> 12.
@@ -126,4 +131,26 @@ fn is_marker(line: &str) -> bool {
         || l.chars().all(|c| c.is_ascii_digit())
         || (l.contains('/')
             && l.chars().all(|c| c.is_ascii_digit() || c == '/'))
+}
+
+/// True for slide "chrome" that should never appear in the preview or search
+/// index: the "IMNURI CREȘTINE 2013" footer present on every slide, plus the
+/// markers caught by [`is_marker`] (the "Imnul X" title marker and the "N/M"
+/// counter). Lyrics never match these.
+fn is_chrome(line: &str) -> bool {
+    let l = line.trim();
+    // Footer, matched case-insensitively on its distinctive prefix.
+    let lower = l.to_lowercase();
+    lower.starts_with("imnuri creștine")
+        || lower.starts_with("imnuri crestine")
+        || is_marker(l)
+        || is_standalone_number(l)
+}
+
+/// True for a line that is ONLY a number with an optional trailing dot, e.g.
+/// "1", "2." — the per-slide slide-number. A line like "1. Ca un cerb…" is NOT
+/// matched (lyrics follow the number), so numbered verse lines survive.
+fn is_standalone_number(line: &str) -> bool {
+    let l = line.trim().trim_end_matches('.');
+    !l.is_empty() && l.chars().all(|c| c.is_ascii_digit())
 }

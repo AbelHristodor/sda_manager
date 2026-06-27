@@ -87,23 +87,31 @@ component Sidebar inherits Rectangle {
 // wrapped in the dark theme. Member names match what main.rs expects.
 component LibraryPanel inherits Rectangle {
     in property <[StandardListViewItem]> results;
-    in property <string> preview-title;
-    in property <string> preview-body;
     in property <string> status;
     in-out property <int> current-index;
+
+    // Preview: one slide at a time.
+    in property <string> slide-text;
+    in property <int> slide-count;
+    in-out property <int> slide-index: 0;
+    in property <string> preview-status;
 
     callback query-changed(string);
     callback open-current();
     callback reveal-current();
     callback current-changed(int);
+    callback prev-slide();
+    callback next-slide();
 
-    // Typing focus lives in the search field; the surrounding FocusScope catches
-    // arrow keys the single-line field ignores and drives the list.
+    // Typing focus lives in the search field; the surrounding FocusScope
+    // catches arrow keys to drive the list (Up/Down) and slides (Left/Right).
     forward-focus: search;
     background: Theme.bg;
 
     key-handler := FocusScope {
-        key-pressed(event) => {
+        // capture-key-pressed fires top-down BEFORE the focused LineEdit's
+        // TextInput sees the key, so we can claim the arrows.
+        capture-key-pressed(event) => {
             if (event.text == Key.UpArrow) {
                 if (root.current-index > 0) {
                     list.set-current-item(root.current-index - 1);
@@ -116,10 +124,15 @@ component LibraryPanel inherits Rectangle {
                 }
                 return accept;
             }
-            if (event.text == Key.Return) {
-                root.open-current();
+            if (event.text == Key.LeftArrow) {
+                root.prev-slide();
                 return accept;
             }
+            if (event.text == Key.RightArrow) {
+                root.next-slide();
+                return accept;
+            }
+            // Enter handled by the LineEdit's `accepted`; let other keys type.
             return reject;
         }
 
@@ -153,20 +166,32 @@ component LibraryPanel inherits Rectangle {
                     VerticalBox {
                         padding: 14px;
                         spacing: 10px;
-                        Text {
-                            text: root.preview-title;
-                            color: Theme.text;
-                            font-size: 18px;
-                            font-weight: 700;
-                            wrap: word-wrap;
-                        }
+                        // Current slide text.
                         ScrollView {
                             Text {
-                                text: root.preview-body;
+                                text: root.slide-text;
                                 color: Theme.text;
+                                font-size: 16px;
                                 wrap: word-wrap;
                             }
                         }
+
+                        // Slide navigation.
+                        HorizontalBox {
+                            height: 36px;
+                            alignment: start;
+                            spacing: 8px;
+                            Button {
+                                text: "‹ Prev";
+                                clicked => { root.prev-slide(); }
+                            }
+                            Button {
+                                text: "Next ›";
+                                clicked => { root.next-slide(); }
+                            }
+                        }
+
+                        // Open / reveal actions.
                         HorizontalBox {
                             height: 40px;
                             alignment: start;
@@ -178,6 +203,20 @@ component LibraryPanel inherits Rectangle {
                             Button {
                                 text: "Reveal in folder";
                                 clicked => { root.reveal-current(); }
+                            }
+                        }
+
+                        // Status bar pinned at the bottom of the preview.
+                        Rectangle {
+                            height: 28px;
+                            border-radius: 6px;
+                            background: Theme.field;
+                            Text {
+                                x: 6px;
+                                vertical-alignment: center;
+                                text: root.preview-status;
+                                color: Theme.text-dim;
+                                font-size: 12px;
                             }
                         }
                     }
@@ -311,14 +350,21 @@ export component AppWindow inherits Window {
 
     // Library (existing contract — names unchanged)
     in property <[StandardListViewItem]> results;
-    in property <string> preview-title;
-    in property <string> preview-body;
     in property <string> status;
     in-out property <int> current-index: -1;
+
+    // Preview: one slide at a time.
+    in property <string> slide-text;
+    in property <int> slide-count;
+    in-out property <int> slide-index: 0;
+    in property <string> preview-status;
+
     callback query-changed(string);
     callback open-current();
     callback reveal-current();
     callback current-changed(int);
+    callback prev-slide();
+    callback next-slide();
 
     // Downloader
     in property <DownloadState> download;
@@ -335,14 +381,18 @@ export component AppWindow inherits Window {
         if root.active-tab == 0: LibraryPanel {
             horizontal-stretch: 1;
             results: root.results;
-            preview-title: root.preview-title;
-            preview-body: root.preview-body;
             status: root.status;
             current-index <=> root.current-index;
+            slide-text: root.slide-text;
+            slide-count: root.slide-count;
+            slide-index <=> root.slide-index;
+            preview-status: root.preview-status;
             query-changed(q) => { root.query-changed(q); }
             open-current => { root.open-current(); }
             reveal-current => { root.reveal-current(); }
             current-changed(i) => { root.current-changed(i); }
+            prev-slide => { root.prev-slide(); }
+            next-slide => { root.next-slide(); }
         }
         if root.active-tab == 1: DownloaderPanel {
             horizontal-stretch: 1;

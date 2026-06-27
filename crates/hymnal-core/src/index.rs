@@ -40,6 +40,7 @@ pub fn build_index(root: &Path, library: &str) -> Vec<HymnEntry> {
                 number: parsed.number,
                 title: parsed.title,
                 body: parsed.body,
+                slides: parsed.slides,
                 path: path.clone(),
                 library: library.to_string(),
                 mtime: mtime_secs(&path),
@@ -50,15 +51,36 @@ pub fn build_index(root: &Path, library: &str) -> Vec<HymnEntry> {
     entries
 }
 
-/// Load a cached index from `cache_path`, or `None` if missing/corrupt.
+/// On-disk cache format version. Bump this whenever the parser or entry layout
+/// changes in a way that makes previously-cached entries stale (e.g. improved
+/// title extraction). A mismatch makes `load_cache` return `None`, forcing a
+/// full re-parse even though the underlying .pptx mtimes are unchanged.
+pub const CACHE_VERSION: u32 = 5;
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CacheFile {
+    version: u32,
+    entries: Vec<HymnEntry>,
+}
+
+/// Load a cached index from `cache_path`. Returns `None` if missing, corrupt,
+/// or written by a different `CACHE_VERSION`.
 pub fn load_cache(cache_path: &Path) -> Option<Vec<HymnEntry>> {
     let bytes = std::fs::read(cache_path).ok()?;
-    bincode::deserialize(&bytes).ok()
+    let cache: CacheFile = bincode::deserialize(&bytes).ok()?;
+    if cache.version != CACHE_VERSION {
+        return None;
+    }
+    Some(cache.entries)
 }
 
 /// Persist the index to `cache_path` (best-effort; errors are returned).
 pub fn save_cache(cache_path: &Path, entries: &[HymnEntry]) -> anyhow::Result<()> {
-    let bytes = bincode::serialize(entries)?;
+    let cache = CacheFile {
+        version: CACHE_VERSION,
+        entries: entries.to_vec(),
+    };
+    let bytes = bincode::serialize(&cache)?;
     if let Some(parent) = cache_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -88,6 +110,7 @@ pub fn refresh_index(
                 number: parsed.number,
                 title: parsed.title,
                 body: parsed.body,
+                slides: parsed.slides,
                 path: path.clone(),
                 library: library.to_string(),
                 mtime,

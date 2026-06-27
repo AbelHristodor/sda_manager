@@ -15,7 +15,9 @@ bincode = "1"
 toml = "0.8"
 directories = "5"
 dirs = "5"
-git2 = "0.19"
+# Vendored libgit2 is compiled from source into the binary so released
+# executables don't depend on a system libgit2 being installed.
+git2 = { version = "0.19", features = ["vendored-libgit2"] }
 walkdir = "2"
 ureq = "2"
 

@@ -31,6 +31,7 @@ fn cache_round_trips() {
         number: Some(7),
         title: "T".into(),
         body: "B".into(),
+        slides: vec![],
         path: PathBuf::from("/x/7.pptx"),
         library: "L".into(),
         mtime: 123,
@@ -46,4 +47,28 @@ fn refresh_reuses_unchanged_entries() {
     let first = hymnal_core::index::build_index(root, "L");
     let again = refresh_index(root, "L", &first);
     assert_eq!(first.len(), again.len());
+}
+
+#[test]
+fn cache_with_wrong_version_is_ignored() {
+    // A cache written in a legacy/foreign format must not load — otherwise a
+    // parser change (e.g. better title extraction) would keep serving stale
+    // entries because the .pptx mtimes never changed.
+    let dir = tempfile::tempdir().unwrap();
+    let cache = dir.path().join("index.bin");
+    // Write raw entries WITHOUT the version envelope (the pre-versioning format).
+    let legacy = vec![HymnEntry {
+        number: Some(1),
+        title: "stale".into(),
+        body: "b".into(),
+        slides: vec![],
+        path: PathBuf::from("/x/1.pptx"),
+        library: "L".into(),
+        mtime: 1,
+    }];
+    std::fs::write(&cache, bincode::serialize(&legacy).unwrap()).unwrap();
+    assert!(
+        load_cache(&cache).is_none(),
+        "legacy/unversioned cache must be treated as a miss"
+    );
 }
