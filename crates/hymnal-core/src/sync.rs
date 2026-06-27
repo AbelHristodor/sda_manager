@@ -43,8 +43,6 @@ fn pull(dest: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn clone_when_missing_then_treated_as_existing() {
         // No network in unit tests: verify the path-branch logic only.
