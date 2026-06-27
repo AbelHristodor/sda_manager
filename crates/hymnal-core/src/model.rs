@@ -1,1 +1,36 @@
-// implemented in a later task
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+
+/// One hymn extracted from a .pptx file.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HymnEntry {
+    /// Hymn number parsed from the filename stem (authoritative), e.g. 150.
+    pub number: Option<u32>,
+    /// Title line (first meaningful text on the title slide).
+    pub title: String,
+    /// Concatenated verse text from all slides, for full-text search.
+    pub body: String,
+    /// Absolute path to the source .pptx.
+    pub path: PathBuf,
+    /// Name of the library this hymn belongs to.
+    pub library: String,
+    /// File modification time (unix seconds) used for cache invalidation.
+    pub mtime: i64,
+}
+
+/// Which field a search query matched, for display/ranking hints.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatchField {
+    Number,
+    Title,
+    Filename,
+    Body,
+}
+
+/// A ranked search result.
+#[derive(Debug, Clone)]
+pub struct SearchHit {
+    pub entry: HymnEntry,
+    pub score: u32,
+    pub field: MatchField,
+}
