@@ -3,5 +3,5 @@ pub mod model;
 pub mod index;
 pub mod library;
 pub mod pptx;
-// pub mod search;   // Task 7
+pub mod search;
 // pub mod sync;     // Task 8
