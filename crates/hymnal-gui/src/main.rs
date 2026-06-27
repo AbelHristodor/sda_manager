@@ -1,13 +1,9 @@
 slint::include_modules!();
 
 use hymnal_core::downloader::{self, DownloadEvent};
-use hymnal_core::index::{load_cache, refresh_index, save_cache};
-use hymnal_core::library::{
-    default_library_dir, downloads_dir, index_cache_path, Config, Library,
-};
+use hymnal_core::library::{downloads_dir, Config};
 use hymnal_core::model::HymnEntry;
 use hymnal_core::search::Searcher;
-use hymnal_core::sync::sync_default_library;
 use log::{debug, info, warn};
 use slint::{ModelRc, SharedString, StandardListViewItem, VecModel};
 use std::rc::Rc;
@@ -73,6 +69,10 @@ fn main() -> anyhow::Result<()> {
     let initial_dir = downloads_dir(&dl_cfg.borrow());
     ui.set_download_dir(initial_dir.to_string_lossy().to_string().into());
 
+    ui.set_app_version(env!("CARGO_PKG_VERSION").into());
+    ui.set_update_status("Checking for updates…".into());
+    ui.set_sync_status("".into());
+
     // Channel carrying download events from the worker thread to the UI thread.
     let (dl_tx, dl_rx) = mpsc::channel::<DownloadEvent>();
 
@@ -82,90 +82,43 @@ fn main() -> anyhow::Result<()> {
 
     let (tx, rx) = mpsc::channel::<Vec<HymnEntry>>();
 
+    // Force-sync delivers a freshly rebuilt index (or an error message).
+    let (fs_tx, fs_rx) = mpsc::channel::<Result<Vec<HymnEntry>, String>>();
+
     // ---- Worker thread: config -> sync -> index -> send entries to UI ----
     let weak = ui.as_weak();
     std::thread::spawn(move || {
-        let mut cfg = Config::default();
-        match hymnal_core::library::config_path() {
-            Some(p) => {
-                debug!("loading config from {}", p.display());
-                cfg = Config::load(&p).unwrap_or_else(|e| {
-                    warn!("config load failed ({e}); using defaults");
-                    Config::default()
-                });
-            }
-            None => warn!("no config path available; using defaults"),
-        }
-        info!(
-            "config: repo_url={}, {} configured libraries",
-            cfg.default_repo_url,
-            cfg.libraries.len()
-        );
-
-        if let Some(dir) = default_library_dir() {
-            // Always sync: clones if missing, fast-forward pulls if present, so
-            // an existing checkout picks up newly published hymns on launch.
-            let fresh = !dir.join(".git").is_dir();
-            info!(
-                "{} default library from {} -> {}",
-                if fresh { "cloning" } else { "updating" },
-                cfg.default_repo_url,
-                dir.display()
-            );
-            match sync_default_library(&cfg.default_repo_url, &dir) {
-                Ok(()) => info!("clone/sync ok"),
-                Err(e) => warn!("clone/sync failed: {e}"),
-            }
-            if !cfg.libraries.iter().any(|l| l.managed_by_git) {
-                // The default repo holds app code alongside the hymns, so index
-                // the hymns subdirectory rather than the clone root.
-                let hymns = dir.join(hymnal_core::library::DEFAULT_REPO_HYMNS_SUBDIR);
-                debug!("registering default library at {}", hymns.display());
-                cfg.libraries.push(Library {
-                    name: "Imnuri Creștine".into(),
-                    path: hymns.to_string_lossy().to_string(),
-                    enabled: true,
-                    managed_by_git: true,
-                });
-            }
-        } else {
-            warn!("could not determine default library dir");
-        }
-
-        let cache = index_cache_path();
-        let cached = cache.as_ref().and_then(|p| load_cache(p)).unwrap_or_default();
-        debug!("loaded {} cached entries", cached.len());
-
-        let mut entries = Vec::new();
-        for lib in cfg.libraries.iter().filter(|l| l.enabled) {
-            let root = std::path::Path::new(&lib.path);
-            let n_before = entries.len();
-            entries.extend(refresh_index(root, &lib.name, &cached));
-            info!(
-                "indexed library '{}' at {} -> {} hymns",
-                lib.name,
-                lib.path,
-                entries.len() - n_before
-            );
-        }
-        if entries.is_empty() {
-            warn!("no entries indexed; falling back to {} cached entries", cached.len());
-            entries = cached;
-        }
-        info!("total {} hymns indexed", entries.len());
-
-        if let Some(p) = cache {
-            match save_cache(&p, &entries) {
-                Ok(()) => debug!("wrote index cache to {}", p.display()),
-                Err(e) => warn!("failed to write index cache: {e}"),
-            }
-        }
+        let cfg = match hymnal_core::library::config_path() {
+            Some(p) => Config::load(&p).unwrap_or_else(|e| {
+                warn!("config load failed ({e}); using defaults");
+                Config::default()
+            }),
+            None => Config::default(),
+        };
+        let entries = hymnal_core::refresh::load_library(cfg, false);
         if tx.send(entries).is_err() {
             warn!("UI gone before index delivered");
         }
-        let _ = weak.upgrade_in_event_loop(|ui| {
+        let weak_ready = weak.clone();
+        let _ = weak_ready.upgrade_in_event_loop(|ui| {
             ui.set_status("Library ready.".into());
         });
+
+        // Background binary self-update check (errors logged, never block boot).
+        match hymnal_core::update::check_and_stage_update() {
+            Ok(hymnal_core::update::UpdateOutcome::UpToDate) => {
+                let _ = weak.upgrade_in_event_loop(|ui| ui.set_update_status("Up to date.".into()));
+            }
+            Ok(hymnal_core::update::UpdateOutcome::Updated { version }) => {
+                let _ = weak.upgrade_in_event_loop(move |ui| {
+                    ui.set_update_status(format!("Update {version} staged — restart to apply.").into());
+                });
+            }
+            Err(e) => {
+                warn!("update check failed: {e}");
+                let _ = weak.upgrade_in_event_loop(|ui| ui.set_update_status("Update check failed.".into()));
+            }
+        }
     });
 
     // ---- UI-thread state ----
@@ -223,6 +176,22 @@ fn main() -> anyhow::Result<()> {
                         }
                     }
                     ui.set_download(s);
+                }
+            }
+            if let Ok(result) = fs_rx.try_recv() {
+                if let Some(ui) = weak2.upgrade() {
+                    match result {
+                        Ok(entries) => {
+                            let n = entries.len();
+                            *searcher_for_timer.borrow_mut() = Some(Searcher::new(entries));
+                            ui.set_sync_status(format!("Synced — indexed {n} hymns.").into());
+                            ui.invoke_query_changed("".into());
+                        }
+                        Err(e) => {
+                            ui.set_sync_status(format!("Sync failed: {e}").into());
+                        }
+                    }
+                    ui.set_syncing(false);
                 }
             }
         },
@@ -344,6 +313,29 @@ fn main() -> anyhow::Result<()> {
                 warn!("failed to open {}: {e}", path.display());
             }
         }
+    });
+
+    // ---- Force sync: wipe clone+cache, re-clone, reindex (off the UI thread) ----
+    let weak_fs = ui.as_weak();
+    ui.on_force_sync(move || {
+        let Some(ui) = weak_fs.upgrade() else { return };
+        if ui.get_syncing() {
+            return; // already running
+        }
+        ui.set_syncing(true);
+        ui.set_sync_status("Re-cloning and reindexing…".into());
+        let fs_tx = fs_tx.clone();
+        std::thread::spawn(move || {
+            let cfg = match hymnal_core::library::config_path() {
+                Some(p) => Config::load(&p).unwrap_or_default(),
+                None => Config::default(),
+            };
+            let result = match hymnal_core::refresh::force_clean(&cfg) {
+                Ok(()) => Ok(hymnal_core::refresh::load_library(cfg, true)),
+                Err(e) => Err(format!("force clean failed: {e}")),
+            };
+            let _ = fs_tx.send(result);
+        });
     });
 
     // ---- Reveal the highlighted hymn's folder ----
