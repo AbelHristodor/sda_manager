@@ -43,12 +43,59 @@ fn pull(dest: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    /// Init a non-bare git repo at `path` with one committed file, on `main`.
+    fn init_remote(path: &Path, file: &str, contents: &str) -> git2::Repository {
+        let repo = git2::Repository::init(path).unwrap();
+        // Ensure the branch is named "main".
+        repo.set_head("refs/heads/main").ok();
+        commit_file(&repo, file, contents, "first");
+        repo
+    }
+
+    fn commit_file(repo: &git2::Repository, file: &str, contents: &str, msg: &str) {
+        let workdir = repo.workdir().unwrap();
+        std::fs::write(workdir.join(file), contents).unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new(file)).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let sig = git2::Signature::now("Test", "test@example.com").unwrap();
+        let parents = match repo.head().ok().and_then(|h| h.target()) {
+            Some(oid) => vec![repo.find_commit(oid).unwrap()],
+            None => vec![],
+        };
+        let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
+        repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &parent_refs)
+            .unwrap();
+    }
+
     #[test]
-    fn clone_when_missing_then_treated_as_existing() {
-        // No network in unit tests: verify the path-branch logic only.
-        let dir = tempfile::tempdir().unwrap();
-        let dest = dir.path().join("lib");
-        // .git absent -> would attempt clone; we only assert the predicate.
-        assert!(!dest.join(".git").is_dir());
+    fn clones_when_missing_then_pulls_new_commits() {
+        let tmp = tempfile::tempdir().unwrap();
+        let remote_path = tmp.path().join("remote");
+        let dest = tmp.path().join("clone");
+        let remote = init_remote(&remote_path, "hymn.txt", "one");
+        let url = remote_path.to_str().unwrap();
+
+        // First sync: directory absent -> clone.
+        sync_default_library(url, &dest).unwrap();
+        assert!(dest.join(".git").is_dir(), "should have cloned");
+        assert_eq!(
+            std::fs::read_to_string(dest.join("hymn.txt")).unwrap(),
+            "one"
+        );
+
+        // New commit lands on the remote.
+        commit_file(&remote, "hymn.txt", "two", "second");
+
+        // Second sync: clone exists -> fast-forward pull picks up the change.
+        sync_default_library(url, &dest).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dest.join("hymn.txt")).unwrap(),
+            "two",
+            "existing clone should fast-forward to new commit"
+        );
     }
 }
