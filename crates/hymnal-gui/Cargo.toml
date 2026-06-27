@@ -6,3 +6,12 @@ version.workspace = true
 [[bin]]
 name = "hymnal-gui"
 path = "src/main.rs"
+
+[dependencies]
+hymnal-core = { path = "../hymnal-core" }
+slint = "1.8"
+open = "5"
+anyhow = { workspace = true }
+
+[build-dependencies]
+slint-build = "1.8"

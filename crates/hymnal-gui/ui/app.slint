@@ -1,0 +1,99 @@
+import { LineEdit, ListView, Button, ScrollView, VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+export struct HymnRow {
+    number: string,
+    title: string,
+    library: string,
+}
+
+export component AppWindow inherits Window {
+    title: "Hymn Finder";
+    preferred-width: 900px;
+    preferred-height: 600px;
+
+    in property <[HymnRow]> results;
+    in property <string> preview-title;
+    in property <string> preview-body;
+    in property <string> status;
+    in-out property <int> selected-index: -1;
+
+    callback query-changed(string);
+    callback open-selected();
+    callback reveal-selected();
+    callback selection-changed(int);
+
+    VerticalBox {
+        Text {
+            text: root.status;
+            color: gray;
+        }
+
+        search := LineEdit {
+            placeholder-text: "Search by number, title, or lyrics…";
+            edited(text) => {
+                root.query-changed(text);
+            }
+        }
+
+        HorizontalBox {
+            ListView {
+                width: 40%;
+                for row[i] in root.results: Rectangle {
+                    height: 48px;
+                    background: i == root.selected-index ? #d0e0ff : transparent;
+                    TouchArea {
+                        clicked => {
+                            root.selected-index = i;
+                            root.selection-changed(i);
+                        }
+                    }
+
+                    VerticalBox {
+                        padding: 4px;
+                        Text {
+                            text: row.number + ". " + row.title;
+                            font-weight: 600;
+                        }
+
+                        Text {
+                            text: row.library;
+                            color: gray;
+                            font-size: 11px;
+                        }
+                    }
+                }
+            }
+
+            VerticalBox {
+                Text {
+                    text: root.preview-title;
+                    font-size: 18px;
+                    font-weight: 700;
+                }
+
+                ScrollView {
+                    Text {
+                        text: root.preview-body;
+                        wrap: word-wrap;
+                    }
+                }
+
+                HorizontalBox {
+                    Button {
+                        text: "Open in PowerPoint";
+                        clicked => {
+                            root.open-selected();
+                        }
+                    }
+
+                    Button {
+                        text: "Reveal in folder";
+                        clicked => {
+                            root.reveal-selected();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
