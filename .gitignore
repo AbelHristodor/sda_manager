@@ -3,3 +3,4 @@ Cargo.lock
 *.pptx~
 ~$*
 .DS_Store
+.superpowers/
