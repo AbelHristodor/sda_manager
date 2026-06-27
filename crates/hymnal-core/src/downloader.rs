@@ -116,6 +116,20 @@ fn make_executable(path: &Path) -> anyhow::Result<()> {
         perms.set_mode(0o755);
         std::fs::set_permissions(path, perms)?;
     }
+    // On macOS a binary downloaded by the app inherits a quarantine attribute;
+    // when the GUI app later spawns it, Gatekeeper can block execution. Strip
+    // the quarantine flag so our own auto-downloaded tools run cleanly. Best
+    // effort — ignore failures (e.g. attribute absent).
+    #[cfg(target_os = "macos")]
+    {
+        let _ = Command::new("/usr/bin/xattr")
+            .arg("-d")
+            .arg("com.apple.quarantine")
+            .arg(path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
     let _ = path; // silence unused warning on non-unix
     Ok(())
 }
@@ -264,8 +278,14 @@ fn should_self_update(stamp: &Path) -> bool {
 }
 
 /// Best-effort `yt-dlp -U`, at most once per 24h, and only for the copy we
-/// manage in the tools dir (never a system/PATH install). Failures are ignored;
-/// the timestamp is always written so we don't retry on every download.
+/// manage in the tools dir (never a system/PATH install).
+///
+/// Fire-and-forget: the update runs as a *detached* child and we never wait on
+/// it, so it can NEVER block (or hang) a download. `yt-dlp -U` replaces the
+/// binary via an atomic rename, so the current download keeps using whatever
+/// version is on disk now and the update simply takes effect next time. The
+/// timestamp is written up front so a slow or failed update doesn't re-trigger
+/// on every download.
 fn maybe_self_update(ytdlp: &Path) {
     let managed = tools_dir().map(|d| ytdlp.starts_with(&d)).unwrap_or(false);
     if !managed {
@@ -277,16 +297,20 @@ fn maybe_self_update(ytdlp: &Path) {
     if !should_self_update(&stamp) {
         return;
     }
-    let _ = Command::new(ytdlp)
-        .arg("-U")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+    // Write the stamp first: even if the spawn fails we won't retry until the
+    // 24h window elapses.
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let _ = std::fs::write(&stamp, now.to_string());
+    // Spawn detached and do NOT wait — this must not gate the download.
+    let _ = Command::new(ytdlp)
+        .arg("-U")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
 }
 
 /// yt-dlp progress template that produces lines our parser understands.
@@ -319,12 +343,27 @@ pub fn download(url: &str, dir: &Path, tx: &Sender<DownloadEvent>) {
     // obtained, fall back to the best pre-merged single-file format.
     let ffmpeg = ensure_ffmpeg();
     let have_ffmpeg = ffmpeg.is_ok();
-    let format = if have_ffmpeg { "bv*+ba/b" } else { "b" };
+    // Cap at 1080p: 4K streams are huge and far more likely to need a PO token
+    // (and 403). Prefer merged best <=1080p, then any pre-merged fallback.
+    let format = if have_ffmpeg {
+        "bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b"
+    } else {
+        "b[height<=1080]/b"
+    };
 
     let output_template = dir.join("%(title)s.%(ext)s");
     let mut cmd = Command::new(&ytdlp);
     cmd.arg("--no-playlist")
         .arg("--newline")
+        // YouTube now needs a JS runtime for the default web player's signature.
+        // Without one (we don't bundle Deno), yt-dlp falls back to the
+        // "android vr" client whose media URLs frequently return HTTP 403.
+        // Forcing the `default` client set selects formats that download
+        // reliably without a PO token. See yt-dlp wiki: PO-Token-Guide / EJS.
+        .args(["--extractor-args", "youtube:player_client=default"])
+        // Be resilient to transient throttling/errors mid-download.
+        .args(["--retries", "10"])
+        .args(["--fragment-retries", "10"])
         .args(["-f", format])
         .args(["--progress-template", PROGRESS_TEMPLATE])
         .args(["--print", "before_dl:TITLE|%(title)s"])
