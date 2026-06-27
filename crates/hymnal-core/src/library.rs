@@ -24,6 +24,9 @@ pub struct Library {
 pub struct Config {
     pub default_repo_url: String,
     pub libraries: Vec<Library>,
+    /// User's chosen download folder. `None` => OS Downloads directory.
+    #[serde(default)]
+    pub download_dir: Option<String>,
 }
 
 impl Default for Config {
@@ -31,6 +34,7 @@ impl Default for Config {
         Config {
             default_repo_url: DEFAULT_REPO_URL.to_string(),
             libraries: Vec::new(),
+            download_dir: None,
         }
     }
 }
@@ -82,6 +86,17 @@ pub fn index_cache_path() -> Option<std::path::PathBuf> {
         .map(|d| d.cache_dir().join("index.bin"))
 }
 
+/// Resolve the effective download directory: the configured one, or the OS
+/// Downloads folder, or the home dir as a last resort.
+pub fn downloads_dir(cfg: &Config) -> std::path::PathBuf {
+    if let Some(d) = &cfg.download_dir {
+        return std::path::PathBuf::from(d);
+    }
+    dirs::download_dir()
+        .or_else(dirs::home_dir)
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -96,6 +111,7 @@ mod tests {
                 enabled: true,
                 managed_by_git: true,
             }],
+            download_dir: None,
         };
         let text = cfg.to_toml().unwrap();
         let back = Config::from_toml(&text).unwrap();
@@ -108,5 +124,22 @@ mod tests {
     fn default_config_has_baked_in_repo() {
         let cfg = Config::default();
         assert!(!cfg.default_repo_url.is_empty());
+    }
+
+    #[test]
+    fn config_persists_download_dir() {
+        let cfg = Config {
+            default_repo_url: "https://example.com/hymns.git".into(),
+            libraries: vec![],
+            download_dir: Some("/home/user/Videos".into()),
+        };
+        let back = Config::from_toml(&cfg.to_toml().unwrap()).unwrap();
+        assert_eq!(back.download_dir, Some("/home/user/Videos".into()));
+    }
+
+    #[test]
+    fn config_download_dir_defaults_to_none() {
+        let cfg = Config::default();
+        assert_eq!(cfg.download_dir, None);
     }
 }

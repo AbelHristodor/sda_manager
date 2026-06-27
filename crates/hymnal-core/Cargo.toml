@@ -12,6 +12,7 @@ nucleo-matcher = "0.3"
 bincode = "1"
 toml = "0.8"
 directories = "5"
+dirs = "5"
 git2 = "0.19"
 walkdir = "2"
 
