@@ -1,7 +1,10 @@
 slint::include_modules!();
 
+use hymnal_core::downloader::{self, DownloadEvent};
 use hymnal_core::index::{load_cache, refresh_index, save_cache};
-use hymnal_core::library::{default_library_dir, index_cache_path, Config, Library};
+use hymnal_core::library::{
+    default_library_dir, downloads_dir, index_cache_path, Config, Library,
+};
 use hymnal_core::model::HymnEntry;
 use hymnal_core::search::Searcher;
 use hymnal_core::sync::sync_default_library;
@@ -28,6 +31,25 @@ fn main() -> anyhow::Result<()> {
     info!("starting Hymn Finder");
 
     let ui = AppWindow::new()?;
+
+    // Shared config so folder choices persist across the session and to disk.
+    let cfg_path = hymnal_core::library::config_path();
+    let dl_cfg = std::rc::Rc::new(std::cell::RefCell::new(
+        cfg_path
+            .as_ref()
+            .map(|p| Config::load(p).unwrap_or_default())
+            .unwrap_or_default(),
+    ));
+    let initial_dir = downloads_dir(&dl_cfg.borrow());
+    ui.set_download_dir(initial_dir.to_string_lossy().to_string().into());
+
+    // Channel carrying download events from the worker thread to the UI thread.
+    let (dl_tx, dl_rx) = mpsc::channel::<DownloadEvent>();
+
+    // Guards against overlapping downloads: set true when a worker is spawned,
+    // cleared when a terminal Done/Failed event is drained on the UI thread.
+    let dl_in_flight = std::rc::Rc::new(std::cell::Cell::new(false));
+
     let (tx, rx) = mpsc::channel::<Vec<HymnEntry>>();
 
     // ---- Worker thread: config -> sync -> index -> send entries to UI ----
@@ -129,6 +151,7 @@ fn main() -> anyhow::Result<()> {
     // Poll the channel; install the searcher and run an initial search.
     let weak2 = ui.as_weak();
     let searcher_for_timer = searcher.clone();
+    let dl_in_flight_timer = dl_in_flight.clone();
     let timer = slint::Timer::default();
     timer.start(
         slint::TimerMode::Repeated,
@@ -140,6 +163,36 @@ fn main() -> anyhow::Result<()> {
                 if let Some(ui) = weak2.upgrade() {
                     ui.set_status("Library ready.".into());
                     ui.invoke_query_changed("".into());
+                }
+            }
+            while let Ok(ev) = dl_rx.try_recv() {
+                if let Some(ui) = weak2.upgrade() {
+                    let mut s = ui.get_download();
+                    match ev {
+                        DownloadEvent::Resolving => {
+                            s.status = "resolving".into();
+                        }
+                        DownloadEvent::Title(t) => {
+                            s.title = t.into();
+                        }
+                        DownloadEvent::Progress(p) => {
+                            s.status = "downloading".into();
+                            s.percent = p.percent;
+                            s.speed = p.speed.into();
+                            s.eta = p.eta.into();
+                        }
+                        DownloadEvent::Done { .. } => {
+                            s.status = "done".into();
+                            s.percent = 100.0;
+                            dl_in_flight_timer.set(false);
+                        }
+                        DownloadEvent::Failed { message } => {
+                            s.status = "failed".into();
+                            s.message = message.into();
+                            dl_in_flight_timer.set(false);
+                        }
+                    }
+                    ui.set_download(s);
                 }
             }
         },
@@ -254,6 +307,71 @@ fn main() -> anyhow::Result<()> {
             info!("revealing {}", parent.display());
             if let Err(e) = open::that(parent) {
                 warn!("failed to reveal {}: {e}", parent.display());
+            }
+        }
+    });
+
+    // ---- Choose download folder ----
+    let weak_choose = ui.as_weak();
+    let cfg_choose = dl_cfg.clone();
+    let cfg_path_choose = cfg_path.clone();
+    ui.on_choose_folder(move || {
+        let Some(ui) = weak_choose.upgrade() else { return };
+        let start = ui.get_download_dir().to_string();
+        if let Some(folder) = rfd::FileDialog::new()
+            .set_directory(if start.is_empty() { ".".into() } else { start })
+            .pick_folder()
+        {
+            let s = folder.to_string_lossy().to_string();
+            ui.set_download_dir(s.clone().into());
+            cfg_choose.borrow_mut().download_dir = Some(s);
+            if let Some(p) = &cfg_path_choose {
+                if let Err(e) = cfg_choose.borrow().save(p) {
+                    warn!("failed to save config: {e}");
+                }
+            }
+        }
+    });
+
+    // ---- Start a download on the worker thread ----
+    let weak_start = ui.as_weak();
+    let dl_tx_start = dl_tx.clone();
+    let dl_in_flight_start = dl_in_flight.clone();
+    ui.on_start_download(move || {
+        let Some(ui) = weak_start.upgrade() else { return };
+        let url = ui.get_download_url().to_string();
+        if url.trim().is_empty() {
+            return;
+        }
+        if dl_in_flight_start.get() {
+            return;
+        }
+        dl_in_flight_start.set(true);
+        let dir = std::path::PathBuf::from(ui.get_download_dir().to_string());
+        info!("starting download: {url} -> {}", dir.display());
+        // Show "resolving" immediately for responsiveness.
+        ui.set_download(DownloadState {
+            status: "resolving".into(),
+            title: "".into(),
+            message: "".into(),
+            speed: "".into(),
+            eta: "".into(),
+            percent: 0.0,
+        });
+        let tx = dl_tx_start.clone();
+        std::thread::spawn(move || {
+            downloader::download(&url, &dir, &tx);
+        });
+    });
+
+    // ---- Reveal the download folder ----
+    let weak_reveal = ui.as_weak();
+    ui.on_reveal_download(move || {
+        let Some(ui) = weak_reveal.upgrade() else { return };
+        let dir = ui.get_download_dir().to_string();
+        if !dir.is_empty() {
+            if let Err(e) = open::that(&dir) {
+                warn!("failed to reveal {dir}: {e}");
             }
         }
     });
