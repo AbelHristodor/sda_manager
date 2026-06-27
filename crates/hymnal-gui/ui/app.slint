@@ -88,6 +88,12 @@ component Sidebar inherits Rectangle {
             selected: root.active-tab == 1;
             clicked => { root.active-tab = 1; }
         }
+        NavItem {
+            label: "Settings";
+            icon: @image-url("../../../assets/icon-settings.svg");
+            selected: root.active-tab == 2;
+            clicked => { root.active-tab = 2; }
+        }
     }
 }
 
@@ -361,6 +367,94 @@ component DownloaderPanel inherits Rectangle {
     }
 }
 
+component SettingsPanel inherits Rectangle {
+    in property <string> app-version;
+    in property <string> update-status;
+    in property <string> sync-status;
+    in property <bool> syncing;
+    callback force-sync();
+
+    background: Theme.bg;
+
+    VerticalBox {
+        padding: 20px;
+        spacing: 14px;
+        alignment: start;
+
+        Text {
+            text: "Settings";
+            color: Theme.text;
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        Rectangle {
+            background: Theme.panel;
+            border-radius: Theme.radius;
+            border-width: 1px;
+            border-color: Theme.panel-border;
+            VerticalBox {
+                padding: 14px;
+                spacing: 6px;
+                Text {
+                    text: "Version " + root.app-version;
+                    color: Theme.text;
+                    font-weight: 600;
+                }
+                Text {
+                    text: root.update-status;
+                    color: Theme.text-dim;
+                    font-size: 12px;
+                }
+            }
+        }
+
+        Rectangle {
+            background: Theme.panel;
+            border-radius: Theme.radius;
+            border-width: 1px;
+            border-color: Theme.panel-border;
+            VerticalBox {
+                padding: 14px;
+                spacing: 8px;
+                Text {
+                    text: "Library";
+                    color: Theme.text;
+                    font-weight: 600;
+                }
+                Text {
+                    text: "Force sync deletes the local hymn library and cache, then re-downloads and reindexes everything.";
+                    color: Theme.text-dim;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                }
+                Rectangle {
+                    height: 36px;
+                    width: 180px;
+                    border-radius: Theme.radius;
+                    background: root.syncing ? Theme.field : Theme.danger;
+                    Text {
+                        text: root.syncing ? "Syncing…" : "Force sync library";
+                        color: white;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                    }
+                    TouchArea {
+                        enabled: !root.syncing;
+                        clicked => { root.force-sync(); }
+                    }
+                }
+                Text {
+                    text: root.sync-status;
+                    color: Theme.text-dim;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+}
+
 export component AppWindow inherits Window {
     title: "SDA Manager";
     // Live window/titlebar icon, embedded at compile time. Path is relative to
@@ -398,6 +492,13 @@ export component AppWindow inherits Window {
     callback start-download();
     callback reveal-download();
 
+    // Settings
+    in property <string> app-version;
+    in property <string> update-status;
+    in property <string> sync-status;
+    in property <bool> syncing;
+    callback force-sync();
+
     HorizontalBox {
         padding: 0;
         spacing: 0;
@@ -426,6 +527,14 @@ export component AppWindow inherits Window {
             choose-folder => { root.choose-folder(); }
             start-download => { root.start-download(); }
             reveal-download => { root.reveal-download(); }
+        }
+        if root.active-tab == 2: SettingsPanel {
+            horizontal-stretch: 1;
+            app-version: root.app-version;
+            update-status: root.update-status;
+            sync-status: root.sync-status;
+            syncing: root.syncing;
+            force-sync => { root.force-sync(); }
         }
     }
 }
