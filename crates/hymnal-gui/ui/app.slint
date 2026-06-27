@@ -7,26 +7,30 @@ export component AppWindow inherits Window {
 
     // Rows shown in the results finder, one line of text each (fzf-style).
     in property <[StandardListViewItem]> results;
-    in property <string> preview-title;
-    in property <string> preview-body;
     in property <string> status;
     // Two-way bound to the list's highlighted row so Rust can read/set it.
     in-out property <int> current-index: -1;
 
+    // Preview: one slide at a time.
+    in property <string> slide-text;
+    in property <int> slide-count;
+    in-out property <int> slide-index: 0;
+    in property <string> preview-status;
+
     callback query-changed(string);
     callback open-current();
     callback reveal-current();
-    // Fired when the highlighted row changes (keyboard or click).
     callback current-changed(int);
+    callback prev-slide();
+    callback next-slide();
 
     // Typing focus lives in the search field; the surrounding FocusScope
-    // catches arrow keys the single-line field ignores and drives the list.
+    // catches arrow keys to drive the list (Up/Down) and slides (Left/Right).
     forward-focus: search;
 
     key-handler := FocusScope {
         // capture-key-pressed fires top-down BEFORE the focused LineEdit's
-        // TextInput sees the key, so we can claim Up/Down (which the text field
-        // would otherwise consume for cursor movement) to drive the list.
+        // TextInput sees the key, so we can claim the arrows.
         capture-key-pressed(event) => {
             if (event.text == Key.UpArrow) {
                 if (root.current-index > 0) {
@@ -40,8 +44,15 @@ export component AppWindow inherits Window {
                 }
                 return accept;
             }
-            // Enter is handled by the LineEdit's `accepted` callback; let it
-            // (and all other keys, e.g. typing) reach the text field.
+            if (event.text == Key.LeftArrow) {
+                root.prev-slide();
+                return accept;
+            }
+            if (event.text == Key.RightArrow) {
+                root.next-slide();
+                return accept;
+            }
+            // Enter handled by the LineEdit's `accepted`; let other keys type.
             return reject;
         }
 
@@ -56,7 +67,6 @@ export component AppWindow inherits Window {
                 edited(text) => {
                     root.query-changed(text);
                 }
-                // Enter opens the currently highlighted hymn.
                 accepted(text) => {
                     root.open-current();
                 }
@@ -73,19 +83,33 @@ export component AppWindow inherits Window {
                 }
 
                 VerticalBox {
-                    Text {
-                        text: root.preview-title;
-                        font-size: 18px;
-                        font-weight: 700;
-                    }
-
+                    // Current slide text.
                     ScrollView {
                         Text {
-                            text: root.preview-body;
+                            text: root.slide-text;
+                            font-size: 16px;
                             wrap: word-wrap;
                         }
                     }
 
+                    // Slide navigation.
+                    HorizontalBox {
+                        height: 36px;
+                        Button {
+                            text: "‹ Prev";
+                            clicked => {
+                                root.prev-slide();
+                            }
+                        }
+                        Button {
+                            text: "Next ›";
+                            clicked => {
+                                root.next-slide();
+                            }
+                        }
+                    }
+
+                    // Open / reveal actions.
                     HorizontalBox {
                         height: 40px;
                         Button {
@@ -94,12 +118,24 @@ export component AppWindow inherits Window {
                                 root.open-current();
                             }
                         }
-
                         Button {
                             text: "Reveal in folder";
                             clicked => {
                                 root.reveal-current();
                             }
+                        }
+                    }
+
+                    // Status bar pinned at the bottom of the preview.
+                    Rectangle {
+                        height: 28px;
+                        background: #eeeeee;
+                        Text {
+                            x: 6px;
+                            vertical-alignment: center;
+                            text: root.preview-status;
+                            color: #333333;
+                            font-size: 12px;
                         }
                     }
                 }

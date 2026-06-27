@@ -19,6 +19,36 @@ fn row_label(entry: &HymnEntry) -> String {
     format!("{number}{}  · {}", entry.title, entry.library)
 }
 
+/// Update the preview to show slide `idx` of `slides` for a hymn titled
+/// `title` (numbered `number`). Clamps `idx` into range; sets slide text,
+/// count, index, and the bottom status bar string.
+fn show_slide(
+    ui: &AppWindow,
+    number: Option<u32>,
+    title: &str,
+    slides: &[String],
+    idx: i32,
+) {
+    let count = slides.len() as i32;
+    if count == 0 {
+        ui.set_slide_text("".into());
+        ui.set_slide_count(0);
+        ui.set_slide_index(0);
+        ui.set_preview_status(SharedString::from(format!("{title} — 0 slides")));
+        return;
+    }
+    let idx = idx.clamp(0, count - 1);
+    let number_prefix = number.map(|n| format!("{n}. ")).unwrap_or_default();
+    ui.set_slide_text(SharedString::from(slides[idx as usize].clone()));
+    ui.set_slide_count(count);
+    ui.set_slide_index(idx);
+    ui.set_preview_status(SharedString::from(format!(
+        "{number_prefix}{title} — slide {}/{}",
+        idx + 1,
+        count
+    )));
+}
+
 fn main() -> anyhow::Result<()> {
     // Logging: default to `info` for our crate; override with RUST_LOG=debug.
     env_logger::Builder::from_env(
@@ -178,15 +208,16 @@ fn main() -> anyhow::Result<()> {
         }
     });
 
-    // ---- Highlight changed (keyboard arrows or click) -> update preview ----
+    // ---- Highlight changed (keyboard arrows or click) -> show slide 0 ----
     let searcher_for_sel = searcher.clone();
     let rows_for_sel = row_to_entry.clone();
     let weak6 = ui.as_weak();
     ui.on_current_changed(move |idx| {
         let Some(ui) = weak6.upgrade() else { return };
         if idx < 0 {
-            ui.set_preview_title("".into());
-            ui.set_preview_body("".into());
+            ui.set_slide_text("".into());
+            ui.set_slide_count(0);
+            ui.set_preview_status("".into());
             return;
         }
         let guard = searcher_for_sel.borrow();
@@ -196,14 +227,43 @@ fn main() -> anyhow::Result<()> {
             .get(idx as usize)
             .and_then(|&ei| s.entry(ei));
         if let Some(entry) = entry {
-            debug!("preview #{:?} {}", entry.number, entry.title);
-            let title = format!(
-                "{}{}",
-                entry.number.map(|n| format!("{n}. ")).unwrap_or_default(),
-                entry.title
-            );
-            ui.set_preview_title(SharedString::from(title));
-            ui.set_preview_body(SharedString::from(entry.body.clone()));
+            debug!("preview #{:?} {} ({} slides)", entry.number, entry.title, entry.slides.len());
+            show_slide(&ui, entry.number, &entry.title, &entry.slides, 0);
+        }
+    });
+
+    // ---- Slide navigation: step within the highlighted hymn's slides ----
+    let searcher_for_prev = searcher.clone();
+    let rows_for_prev = row_to_entry.clone();
+    let weak_prev = ui.as_weak();
+    ui.on_prev_slide(move || {
+        let Some(ui) = weak_prev.upgrade() else { return };
+        let row = ui.get_current_index();
+        if row < 0 {
+            return;
+        }
+        let guard = searcher_for_prev.borrow();
+        let Some(s) = guard.as_ref() else { return };
+        let entry = rows_for_prev.borrow().get(row as usize).and_then(|&ei| s.entry(ei));
+        if let Some(entry) = entry {
+            show_slide(&ui, entry.number, &entry.title, &entry.slides, ui.get_slide_index() - 1);
+        }
+    });
+
+    let searcher_for_next = searcher.clone();
+    let rows_for_next = row_to_entry.clone();
+    let weak_next = ui.as_weak();
+    ui.on_next_slide(move || {
+        let Some(ui) = weak_next.upgrade() else { return };
+        let row = ui.get_current_index();
+        if row < 0 {
+            return;
+        }
+        let guard = searcher_for_next.borrow();
+        let Some(s) = guard.as_ref() else { return };
+        let entry = rows_for_next.borrow().get(row as usize).and_then(|&ei| s.entry(ei));
+        if let Some(entry) = entry {
+            show_slide(&ui, entry.number, &entry.title, &entry.slides, ui.get_slide_index() + 1);
         }
     });
 
