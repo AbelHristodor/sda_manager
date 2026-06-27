@@ -24,7 +24,10 @@ export component AppWindow inherits Window {
     forward-focus: search;
 
     key-handler := FocusScope {
-        key-pressed(event) => {
+        // capture-key-pressed fires top-down BEFORE the focused LineEdit's
+        // TextInput sees the key, so we can claim Up/Down (which the text field
+        // would otherwise consume for cursor movement) to drive the list.
+        capture-key-pressed(event) => {
             if (event.text == Key.UpArrow) {
                 if (root.current-index > 0) {
                     list.set-current-item(root.current-index - 1);
@@ -37,10 +40,8 @@ export component AppWindow inherits Window {
                 }
                 return accept;
             }
-            if (event.text == Key.Return) {
-                root.open-current();
-                return accept;
-            }
+            // Enter is handled by the LineEdit's `accepted` callback; let it
+            // (and all other keys, e.g. typing) reach the text field.
             return reject;
         }
 
