@@ -4,4 +4,4 @@ pub mod index;
 pub mod library;
 pub mod pptx;
 pub mod search;
-// pub mod sync;     // Task 8
+pub mod sync;
