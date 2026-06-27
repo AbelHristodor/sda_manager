@@ -1,6 +1,6 @@
 pub mod fold;
 pub mod model;
-// pub mod index;    // Task 5
+pub mod index;
 // pub mod library;  // Task 6
 pub mod pptx;
 // pub mod search;   // Task 7
