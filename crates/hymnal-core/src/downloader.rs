@@ -46,9 +46,57 @@ pub fn parse_progress_line(line: &str) -> Option<DownloadProgress> {
     })
 }
 
+use std::path::Path;
+
+/// Platform-correct executable file name (adds `.exe` on Windows).
+pub fn binary_name(stem: &str) -> String {
+    if cfg!(windows) {
+        format!("{stem}.exe")
+    } else {
+        stem.to_string()
+    }
+}
+
+/// Return the path to `stem` inside `dir` if it exists there, else `None`.
+pub fn resolve_in_dir(dir: &Path, stem: &str) -> Option<PathBuf> {
+    let candidate = dir.join(binary_name(stem));
+    if candidate.is_file() {
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
+/// Directory where auto-downloaded tool binaries are stored.
+pub fn tools_dir() -> Option<PathBuf> {
+    directories::ProjectDirs::from("org", "hymnal", "HymnFinder")
+        .map(|d| d.data_dir().join("tools"))
+}
+
+/// Locate `stem` (e.g. "yt-dlp"): prefer the app tools dir, then `PATH`.
+/// Returns `None` if not found anywhere.
+pub fn find_existing(stem: &str) -> Option<PathBuf> {
+    if let Some(dir) = tools_dir() {
+        if let Some(p) = resolve_in_dir(&dir, stem) {
+            return Some(p);
+        }
+    }
+    which_in_path(stem)
+}
+
+/// Minimal `PATH` lookup (avoids pulling in a crate for one function).
+fn which_in_path(stem: &str) -> Option<PathBuf> {
+    let name = binary_name(stem);
+    let paths = std::env::var_os("PATH")?;
+    std::env::split_paths(&paths)
+        .map(|p| p.join(&name))
+        .find(|p| p.is_file())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn parses_a_progress_line() {
@@ -77,5 +125,31 @@ mod tests {
         // yt-dlp emits "Unknown" / "N/A" for some fields early on.
         let p = parse_progress_line("PROGRESS|N/A%|Unknown|Unknown");
         assert!(p.is_none());
+    }
+
+    #[test]
+    fn resolves_binary_in_data_dir_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let name = if cfg!(windows) { "yt-dlp.exe" } else { "yt-dlp" };
+        let bin = dir.path().join(name);
+        fs::write(&bin, b"#!/bin/sh\n").unwrap();
+        let found = resolve_in_dir(dir.path(), "yt-dlp");
+        assert_eq!(found, Some(bin));
+    }
+
+    #[test]
+    fn returns_none_when_absent_from_data_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(resolve_in_dir(dir.path(), "yt-dlp"), None);
+    }
+
+    #[test]
+    fn binary_name_has_exe_on_windows() {
+        let name = binary_name("yt-dlp");
+        if cfg!(windows) {
+            assert_eq!(name, "yt-dlp.exe");
+        } else {
+            assert_eq!(name, "yt-dlp");
+        }
     }
 }
