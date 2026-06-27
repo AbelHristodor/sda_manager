@@ -561,22 +561,25 @@ git commit -m "feat(core): auto-download yt-dlp and run a video download with pr
 **Files:**
 - Modify: `crates/hymnal-gui/ui/app.slint`
 
-This task rewrites `app.slint`. The Library UI keeps the exact same property and
-callback names so `main.rs` library wiring is unchanged; new members are added
-for tab state and the downloader.
+> **IMPORTANT — current code differs from earlier plan drafts.** The Library UI
+> already uses `StandardListView` with keyboard navigation (arrow keys, Enter to
+> open), a `FocusScope`, and these exact member names:
+> `results: [StandardListViewItem]`, `preview-title`, `preview-body`, `status`,
+> `current-index` (in-out), callbacks `query-changed`, `open-current`,
+> `reveal-current`, `current-changed`. **These names and the keyboard nav MUST be
+> preserved exactly** — `main.rs` depends on them and they are real UX. This task
+> WRAPS the existing library content in a sidebar shell; it does NOT rename
+> members or replace `StandardListView` with custom rows.
 
 - [ ] **Step 1: Replace `app.slint` with the restructured UI**
 
-Overwrite `crates/hymnal-gui/ui/app.slint` with:
+Overwrite `crates/hymnal-gui/ui/app.slint` with the following. Note the Library
+content is the existing markup moved verbatim into a `LibraryPanel` component
+(same `StandardListView`, same `FocusScope` keyboard handling, same member
+names), now styled with the Slate Dark `Theme` and wrapped by a `Sidebar`.
 
 ```slint
-import { LineEdit, ListView, Button, ScrollView, VerticalBox, HorizontalBox } from "std-widgets.slint";
-
-export struct HymnRow {
-    number: string,
-    title: string,
-    library: string,
-}
+import { LineEdit, StandardListView, Button, ScrollView, VerticalBox, HorizontalBox } from "std-widgets.slint";
 
 export struct DownloadState {
     // "" idle | "resolving" | "downloading" | "done" | "failed"
@@ -620,7 +623,6 @@ component NavItem inherits Rectangle {
             border-radius: 5px;
             background: selected ? Theme.accent : Theme.accent-soft;
             opacity: selected ? 1.0 : 0.6;
-            y: (parent.height - self.height) / 2;
         }
         Text {
             text: label;
@@ -661,89 +663,102 @@ component Sidebar inherits Rectangle {
     }
 }
 
+// Library panel: existing fzf-style finder with keyboard nav, preserved exactly,
+// wrapped in the dark theme. Member names match what main.rs expects.
 component LibraryPanel inherits Rectangle {
-    in property <[HymnRow]> results;
+    in property <[StandardListViewItem]> results;
     in property <string> preview-title;
     in property <string> preview-body;
     in property <string> status;
-    in-out property <int> selected-index;
+    in-out property <int> current-index;
 
     callback query-changed(string);
-    callback open-selected();
-    callback reveal-selected();
-    callback selection-changed(int);
+    callback open-current();
+    callback reveal-current();
+    callback current-changed(int);
 
+    // Typing focus lives in the search field; the surrounding FocusScope catches
+    // arrow keys the single-line field ignores and drives the list.
+    forward-focus: search;
     background: Theme.bg;
-    VerticalBox {
-        padding: 16px;
-        spacing: Theme.gap;
-        Text { text: root.status; color: Theme.text-dim; }
-        search := LineEdit {
-            placeholder-text: "Search by number, title, or lyrics…";
-            edited(text) => { root.query-changed(text); }
+
+    key-handler := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.UpArrow) {
+                if (root.current-index > 0) {
+                    list.set-current-item(root.current-index - 1);
+                }
+                return accept;
+            }
+            if (event.text == Key.DownArrow) {
+                if (root.current-index < root.results.length - 1) {
+                    list.set-current-item(root.current-index + 1);
+                }
+                return accept;
+            }
+            if (event.text == Key.Return) {
+                root.open-current();
+                return accept;
+            }
+            return reject;
         }
-        HorizontalBox {
+
+        VerticalBox {
+            padding: 16px;
             spacing: Theme.gap;
-            ListView {
-                width: 40%;
-                for row[i] in root.results: Rectangle {
-                    height: 48px;
-                    border-radius: 7px;
-                    background: i == root.selected-index ? Theme.accent : Theme.panel;
-                    TouchArea {
-                        clicked => {
-                            root.selected-index = i;
-                            root.selection-changed(i);
-                        }
-                    }
-                    VerticalBox {
-                        padding: 6px;
-                        Text {
-                            text: row.number + ". " + row.title;
-                            color: Theme.text;
-                            font-weight: 600;
-                            overflow: elide;
-                        }
-                        Text {
-                            text: row.library;
-                            color: Theme.text-dim;
-                            font-size: 11px;
-                        }
+            Text { text: root.status; color: Theme.text-dim; }
+
+            search := LineEdit {
+                placeholder-text: "Search by number, title, or lyrics…";
+                edited(text) => { root.query-changed(text); }
+                accepted(text) => { root.open-current(); }
+            }
+
+            HorizontalBox {
+                spacing: Theme.gap;
+                list := StandardListView {
+                    width: 40%;
+                    model: root.results;
+                    current-item <=> root.current-index;
+                    current-item-changed(index) => {
+                        root.current-changed(index);
                     }
                 }
-            }
-            Rectangle {
-                background: Theme.panel;
-                border-radius: Theme.radius;
-                border-width: 1px;
-                border-color: Theme.panel-border;
-                VerticalBox {
-                    padding: 14px;
-                    spacing: 10px;
-                    Text {
-                        text: root.preview-title;
-                        color: Theme.text;
-                        font-size: 18px;
-                        font-weight: 700;
-                        wrap: word-wrap;
-                    }
-                    ScrollView {
+
+                Rectangle {
+                    background: Theme.panel;
+                    border-radius: Theme.radius;
+                    border-width: 1px;
+                    border-color: Theme.panel-border;
+                    VerticalBox {
+                        padding: 14px;
+                        spacing: 10px;
                         Text {
-                            text: root.preview-body;
+                            text: root.preview-title;
                             color: Theme.text;
+                            font-size: 18px;
+                            font-weight: 700;
                             wrap: word-wrap;
                         }
-                    }
-                    HorizontalBox {
-                        alignment: start;
-                        spacing: 8px;
-                        Button {
-                            text: "Open in PowerPoint";
-                            clicked => { root.open-selected(); }
+                        ScrollView {
+                            Text {
+                                text: root.preview-body;
+                                color: Theme.text;
+                                wrap: word-wrap;
+                            }
                         }
-                        Button {
-                            text: "Reveal in folder";
-                            clicked => { root.reveal-selected(); }
+                        HorizontalBox {
+                            height: 40px;
+                            alignment: start;
+                            spacing: 8px;
+                            Button {
+                                text: "Open in PowerPoint";
+                                clicked => { root.open-current(); }
+                            }
+                            Button {
+                                text: "Reveal in folder";
+                                clicked => { root.reveal-current(); }
+                            }
                         }
                     }
                 }
@@ -793,11 +808,11 @@ component DownloaderPanel inherits Rectangle {
                 horizontal-stretch: 1;
                 Text {
                     x: 12px;
+                    width: parent.width - 24px;
                     text: root.dir;
                     color: Theme.text-dim;
                     vertical-alignment: center;
                     overflow: elide;
-                    width: parent.width - 24px;
                 }
             }
             Button {
@@ -812,7 +827,6 @@ component DownloaderPanel inherits Rectangle {
             clicked => { root.start-download(); }
         }
 
-        // Progress / status area
         if root.state.status != "": Rectangle {
             background: Theme.panel;
             border-radius: Theme.radius;
@@ -851,7 +865,7 @@ component DownloaderPanel inherits Rectangle {
                 if root.state.status == "done": HorizontalBox {
                     alignment: start;
                     spacing: 10px;
-                    Text { text: "✓ Download complete"; color: Theme.accent-soft; }
+                    Text { text: "✓ Download complete"; color: Theme.accent-soft; vertical-alignment: center; }
                     Button {
                         text: "Reveal in folder";
                         clicked => { root.reveal-download(); }
@@ -875,16 +889,16 @@ export component AppWindow inherits Window {
 
     in-out property <int> active-tab: 0;
 
-    // Library (unchanged contract)
-    in property <[HymnRow]> results;
+    // Library (existing contract — names unchanged)
+    in property <[StandardListViewItem]> results;
     in property <string> preview-title;
     in property <string> preview-body;
     in property <string> status;
-    in-out property <int> selected-index: -1;
+    in-out property <int> current-index: -1;
     callback query-changed(string);
-    callback open-selected();
-    callback reveal-selected();
-    callback selection-changed(int);
+    callback open-current();
+    callback reveal-current();
+    callback current-changed(int);
 
     // Downloader
     in property <DownloadState> download;
@@ -904,11 +918,11 @@ export component AppWindow inherits Window {
             preview-title: root.preview-title;
             preview-body: root.preview-body;
             status: root.status;
-            selected-index <=> root.selected-index;
+            current-index <=> root.current-index;
             query-changed(q) => { root.query-changed(q); }
-            open-selected => { root.open-selected(); }
-            reveal-selected => { root.reveal-selected(); }
-            selection-changed(i) => { root.selection-changed(i); }
+            open-current => { root.open-current(); }
+            reveal-current => { root.reveal-current(); }
+            current-changed(i) => { root.current-changed(i); }
         }
         if root.active-tab == 1: DownloaderPanel {
             horizontal-stretch: 1;
@@ -926,13 +940,22 @@ export component AppWindow inherits Window {
 - [ ] **Step 2: Verify the UI compiles**
 
 Run: `cargo build -p hymnal-gui`
-Expected: build FAILS in `main.rs` (the new callbacks/properties aren't wired yet) but the Slint compile step itself succeeds — i.e. errors are Rust errors about unhandled callbacks, NOT `.slint` syntax errors. If you see Slint parse errors, fix the `.slint` file before proceeding.
+Expected: build FAILS only with Rust errors in `main.rs` about the new
+downloader callbacks/properties not being handled — NOT Slint parse errors. The
+existing library callbacks (`query-changed`, `open-current`, etc.) are unchanged,
+so they still wire up. If you see `.slint` syntax errors, fix the file before
+proceeding.
+
+Note: forwarding `current-index <=> root.current-index` two-way through the
+`LibraryPanel` boundary preserves the keyboard-nav behavior; the `FocusScope`
+lives inside `LibraryPanel` and calls `list.set-current-item(...)` exactly as
+before.
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add crates/hymnal-gui/ui/app.slint
-git commit -m "feat(gui): restructure UI into dark sidebar shell with two panels"
+git commit -m "feat(gui): wrap library in dark sidebar shell, add downloader panel"
 ```
 
 ---
@@ -943,6 +966,11 @@ git commit -m "feat(gui): restructure UI into dark sidebar shell with two panels
 - Modify: `crates/hymnal-gui/src/main.rs`
 - Modify: `crates/hymnal-gui/Cargo.toml`
 
+> The existing library wiring (`on_query_changed`, `on_current_changed`,
+> `on_open_current`, `on_reveal_current`, the worker thread, and the 200ms Timer)
+> is UNCHANGED. This task only ADDS downloader wiring. Do not rename or remove any
+> existing handler.
+
 - [ ] **Step 1: Add the folder-dialog dependency**
 
 In `crates/hymnal-gui/Cargo.toml`, under `[dependencies]`, add:
@@ -951,9 +979,16 @@ In `crates/hymnal-gui/Cargo.toml`, under `[dependencies]`, add:
 rfd = "0.14"
 ```
 
-- [ ] **Step 2: Add downloader imports and shared config**
+- [ ] **Step 2: Extend imports**
 
-In `crates/hymnal-gui/src/main.rs`, extend the `use` lines near the top:
+In `crates/hymnal-gui/src/main.rs`, add the downloader import and extend the
+`library` import to include `downloads_dir`. The current import line is:
+
+```rust
+use hymnal_core::library::{default_library_dir, index_cache_path, Config, Library};
+```
+
+Replace it with:
 
 ```rust
 use hymnal_core::downloader::{self, DownloadEvent};
@@ -962,103 +997,36 @@ use hymnal_core::library::{
 };
 ```
 
-(Replace the existing `library::{...}` import line with the one above so `downloads_dir` is included.)
+- [ ] **Step 3: Initialize config handle, download dir, and event channel**
 
-- [ ] **Step 3: Initialize the download directory and config handle**
-
-Immediately after `let ui = AppWindow::new()?;` add:
+Immediately after `let ui = AppWindow::new()?;` (around line 30), add:
 
 ```rust
     // Shared config so folder choices persist across the session and to disk.
     let cfg_path = hymnal_core::library::config_path();
-    let cfg = std::rc::Rc::new(std::cell::RefCell::new(
+    let dl_cfg = std::rc::Rc::new(std::cell::RefCell::new(
         cfg_path
             .as_ref()
             .map(|p| Config::load(p).unwrap_or_default())
             .unwrap_or_default(),
     ));
-    let initial_dir = downloads_dir(&cfg.borrow());
+    let initial_dir = downloads_dir(&dl_cfg.borrow());
     ui.set_download_dir(initial_dir.to_string_lossy().to_string().into());
 
     // Channel carrying download events from the worker thread to the UI thread.
     let (dl_tx, dl_rx) = mpsc::channel::<DownloadEvent>();
 ```
 
-- [ ] **Step 4: Wire choose-folder**
+(The worker thread below loads its own `Config` independently for indexing; this
+separate `dl_cfg` handle is only for the download folder. That duplication is
+acceptable and avoids entangling the indexing thread's ownership.)
 
-Before the final `let _timer = timer;` block, add:
+- [ ] **Step 4: Drain download events inside the existing Timer**
 
-```rust
-    let weak_choose = ui.as_weak();
-    let cfg_choose = cfg.clone();
-    let cfg_path_choose = cfg_path.clone();
-    ui.on_choose_folder(move || {
-        let Some(ui) = weak_choose.upgrade() else { return };
-        let start = ui.get_download_dir().to_string();
-        if let Some(folder) = rfd::FileDialog::new()
-            .set_directory(if start.is_empty() { ".".into() } else { start })
-            .pick_folder()
-        {
-            let s = folder.to_string_lossy().to_string();
-            ui.set_download_dir(s.clone().into());
-            cfg_choose.borrow_mut().download_dir = Some(s);
-            if let Some(p) = &cfg_path_choose {
-                let _ = cfg_choose.borrow().save(p);
-            }
-        }
-    });
-```
-
-- [ ] **Step 5: Wire start-download**
-
-Add after the choose-folder handler:
-
-```rust
-    let weak_start = ui.as_weak();
-    let dl_tx_start = dl_tx.clone();
-    ui.on_start_download(move || {
-        let Some(ui) = weak_start.upgrade() else { return };
-        let url = ui.get_download_url().to_string();
-        if url.trim().is_empty() {
-            return;
-        }
-        let dir = std::path::PathBuf::from(ui.get_download_dir().to_string());
-        // Reset visible state to "resolving" immediately for responsiveness.
-        ui.set_download(DownloadState {
-            status: "resolving".into(),
-            title: "".into(),
-            message: "".into(),
-            speed: "".into(),
-            eta: "".into(),
-            percent: 0.0,
-        });
-        let tx = dl_tx_start.clone();
-        std::thread::spawn(move || {
-            downloader::download(&url, &dir, &tx);
-        });
-    });
-```
-
-- [ ] **Step 6: Wire reveal-download**
-
-Add after the start-download handler:
-
-```rust
-    let weak_reveal = ui.as_weak();
-    ui.on_reveal_download(move || {
-        let Some(ui) = weak_reveal.upgrade() else { return };
-        let dir = ui.get_download_dir().to_string();
-        if !dir.is_empty() {
-            let _ = open::that(&dir);
-        }
-    });
-```
-
-- [ ] **Step 7: Drain download events in the existing Timer**
-
-Inside the existing `timer.start(...)` closure (the one that already does
-`rx.try_recv()` for the index), add a second drain loop. Add this just before the
-closure's closing brace:
+The existing Timer closure currently contains only the index `rx.try_recv()`
+block. Add a second drain loop inside the SAME closure, right after the existing
+`if let Ok(entries) = rx.try_recv() { ... }` block and before the closure's
+closing `},`:
 
 ```rust
             while let Ok(ev) = dl_rx.try_recv() {
@@ -1091,24 +1059,105 @@ closure's closing brace:
             }
 ```
 
-Note: `weak2` is already captured by this closure for the index channel, so it is
-in scope. `dl_rx` is moved into the closure — ensure the closure is `move` (it
-already is).
+`weak2` is already captured by this closure (used for the index channel), so it
+is in scope. `dl_rx` is moved into the closure, which is already `move`.
 
-- [ ] **Step 8: Build and run**
+- [ ] **Step 5: Wire choose-folder**
 
-Run: `cargo build` then `cargo run -p hymnal-gui`
-Expected: app launches; sidebar shows Library + Video Downloader; Library works as before; Downloader tab shows URL field, folder (defaulting to Downloads), and Download button.
+Before the `let _timer = timer;` line near the end of `main`, add:
+
+```rust
+    let weak_choose = ui.as_weak();
+    let cfg_choose = dl_cfg.clone();
+    let cfg_path_choose = cfg_path.clone();
+    ui.on_choose_folder(move || {
+        let Some(ui) = weak_choose.upgrade() else { return };
+        let start = ui.get_download_dir().to_string();
+        if let Some(folder) = rfd::FileDialog::new()
+            .set_directory(if start.is_empty() { ".".into() } else { start })
+            .pick_folder()
+        {
+            let s = folder.to_string_lossy().to_string();
+            ui.set_download_dir(s.clone().into());
+            cfg_choose.borrow_mut().download_dir = Some(s);
+            if let Some(p) = &cfg_path_choose {
+                if let Err(e) = cfg_choose.borrow().save(p) {
+                    warn!("failed to save config: {e}");
+                }
+            }
+        }
+    });
+```
+
+- [ ] **Step 6: Wire start-download**
+
+Add after the choose-folder handler:
+
+```rust
+    let weak_start = ui.as_weak();
+    let dl_tx_start = dl_tx.clone();
+    ui.on_start_download(move || {
+        let Some(ui) = weak_start.upgrade() else { return };
+        let url = ui.get_download_url().to_string();
+        if url.trim().is_empty() {
+            return;
+        }
+        let dir = std::path::PathBuf::from(ui.get_download_dir().to_string());
+        info!("starting download: {url} -> {}", dir.display());
+        // Show "resolving" immediately for responsiveness.
+        ui.set_download(DownloadState {
+            status: "resolving".into(),
+            title: "".into(),
+            message: "".into(),
+            speed: "".into(),
+            eta: "".into(),
+            percent: 0.0,
+        });
+        let tx = dl_tx_start.clone();
+        std::thread::spawn(move || {
+            downloader::download(&url, &dir, &tx);
+        });
+    });
+```
+
+- [ ] **Step 7: Wire reveal-download**
+
+Add after the start-download handler:
+
+```rust
+    let weak_reveal = ui.as_weak();
+    ui.on_reveal_download(move || {
+        let Some(ui) = weak_reveal.upgrade() else { return };
+        let dir = ui.get_download_dir().to_string();
+        if !dir.is_empty() {
+            if let Err(e) = open::that(&dir) {
+                warn!("failed to reveal {dir}: {e}");
+            }
+        }
+    });
+```
+
+- [ ] **Step 8: Build**
+
+Run: `cargo build`
+Expected: PASS — compiles cleanly. (`DownloadState` is generated from the Slint
+struct; `info!`/`warn!` are already imported.)
 
 - [ ] **Step 9: Manual verification of a real download**
 
-1. Switch to Video Downloader.
-2. Paste a short public YouTube URL.
-3. Confirm: "Setting up downloader…" appears on first run (yt-dlp fetch), then a title, a moving progress bar with percent · speed · ETA, then "✓ Download complete".
-4. Click "Reveal in folder" and confirm the video file is present and plays.
-5. Choose a different folder, confirm it persists after restarting the app.
+Run: `cargo run -p hymnal-gui`
+1. Confirm sidebar shows Library + Video Downloader; Library search, arrow-key
+   navigation, Enter-to-open, and both buttons still work (regression check).
+2. Switch to Video Downloader. Confirm the folder defaults to your Downloads dir.
+3. Paste a short public YouTube URL, click Download.
+4. Confirm: "Setting up downloader…" on first run (yt-dlp fetch), then a title,
+   then a moving progress bar with percent · speed · ETA, then "✓ Download
+   complete".
+5. Click "Reveal in folder" and confirm the video file is present and plays.
+6. Choose a different folder, restart the app, confirm it persisted.
 
-Expected: video downloads to the chosen folder; folder choice survives restart.
+Expected: video downloads to the chosen folder; folder choice survives restart;
+library is regression-free.
 
 - [ ] **Step 10: Commit**
 
