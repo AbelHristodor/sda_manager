@@ -24,9 +24,12 @@ fn main() -> anyhow::Result<()> {
                 let _ = sync_default_library(&cfg.default_repo_url, &dir);
             }
             if !cfg.libraries.iter().any(|l| l.managed_by_git) {
+                // The default repo holds app code alongside the hymns, so index
+                // the hymns subdirectory rather than the clone root.
+                let hymns = dir.join(hymnal_core::library::DEFAULT_REPO_HYMNS_SUBDIR);
                 cfg.libraries.push(Library {
                     name: "Imnuri Creștine".into(),
-                    path: dir.to_string_lossy().to_string(),
+                    path: hymns.to_string_lossy().to_string(),
                     enabled: true,
                     managed_by_git: true,
                 });

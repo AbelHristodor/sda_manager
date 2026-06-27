@@ -2,7 +2,12 @@ use serde::{Deserialize, Serialize};
 
 /// The default hymns repository, baked in but overridable in config.
 pub const DEFAULT_REPO_URL: &str =
-    "https://github.com/CHANGEME/imnuri-crestine.git";
+    "https://github.com/AbelHristodor/sda_manager.git";
+
+/// Subdirectory within the default repo that holds the hymn .pptx folders.
+/// The repo also contains application code, so the indexer points here rather
+/// than at the clone root (which would double-index the test fixtures).
+pub const DEFAULT_REPO_HYMNS_SUBDIR: &str = "assets/920";
 
 /// One library = a folder of .pptx files.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
