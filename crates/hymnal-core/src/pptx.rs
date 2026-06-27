@@ -50,7 +50,10 @@ pub fn extract(path: &Path) -> Result<ParsedPptx> {
     for (idx, name) in slide_names.iter().enumerate() {
         let mut xml = String::new();
         zip.by_name(name)?.read_to_string(&mut xml)?;
-        let lines = slide_text_lines(&xml)?;
+        let lines: Vec<String> = slide_text_lines(&xml)?
+            .into_iter()
+            .filter(|l| !is_chrome(l))
+            .collect();
         if idx == 0 {
             first_slide_lines = lines.clone();
         }
@@ -128,4 +131,15 @@ fn is_marker(line: &str) -> bool {
         || l.chars().all(|c| c.is_ascii_digit())
         || (l.contains('/')
             && l.chars().all(|c| c.is_ascii_digit() || c == '/'))
+}
+
+/// True for slide "chrome" that should never appear in the preview or search
+/// index: the "IMNURI CREȘTINE 2013" footer present on every slide, plus the
+/// markers caught by [`is_marker`] (the "Imnul X" title marker and the "N/M"
+/// counter). Lyrics never match these.
+fn is_chrome(line: &str) -> bool {
+    let l = line.trim();
+    // Footer, matched case-insensitively on its distinctive prefix.
+    let lower = l.to_lowercase();
+    lower.starts_with("imnuri creștine") || lower.starts_with("imnuri crestine") || is_marker(l)
 }

@@ -44,3 +44,29 @@ fn preserves_text_per_slide() {
     // body is exactly the slides joined by newlines (search input unchanged).
     assert_eq!(parsed.body, parsed.slides.join("\n"));
 }
+
+#[test]
+fn strips_slide_chrome_footer_counter_and_imnul() {
+    // Each slide carries chrome that should not appear in the preview/search:
+    // the "IMNURI CREȘTINE 2013" footer, a "X/920" (or "X/300") counter, and
+    // on the first slide the "Imnul X" marker.
+    let parsed = extract(Path::new("tests/fixtures/001.pptx")).unwrap();
+    let all = parsed.slides.join("\n");
+    assert!(!all.contains("IMNURI CREȘTINE"), "footer must be stripped");
+    assert!(!all.contains("Imnul"), "'Imnul X' marker must be stripped");
+    // No bare "N/M" counter lines remain.
+    assert!(
+        !parsed.slides.iter().any(|s| s.lines().any(is_counter_line)),
+        "counter lines like '1/300' must be stripped"
+    );
+    // Real lyrics survive.
+    assert!(all.contains("Popoare-oriunde"));
+    // The title is still intact on slide 0.
+    assert!(parsed.slides[0].contains("Plecaţi-vă lui Dumnezeu"));
+}
+
+/// A line that is only digits and slashes, e.g. "1/300" or "150/920".
+fn is_counter_line(line: &str) -> bool {
+    let l = line.trim();
+    !l.is_empty() && l.contains('/') && l.chars().all(|c| c.is_ascii_digit() || c == '/')
+}
