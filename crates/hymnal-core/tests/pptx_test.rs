@@ -70,3 +70,28 @@ fn is_counter_line(line: &str) -> bool {
     let l = line.trim();
     !l.is_empty() && l.contains('/') && l.chars().all(|c| c.is_ascii_digit() || c == '/')
 }
+
+#[test]
+fn strips_standalone_slide_numbers_but_keeps_numbered_lyrics() {
+    // Hymn 1's slides carry a standalone slide-number line ("1.", "2.", …).
+    let one = extract(Path::new("tests/fixtures/001.pptx")).unwrap();
+    for slide in &one.slides {
+        for line in slide.lines() {
+            let l = line.trim();
+            let standalone_number = !l.is_empty()
+                && l.trim_end_matches('.').chars().all(|c| c.is_ascii_digit())
+                && l.trim_end_matches('.').chars().next().is_some();
+            assert!(
+                !standalone_number,
+                "standalone slide number {l:?} must be stripped"
+            );
+        }
+    }
+    // Hymn 356's verse lines START with "1. " followed by lyrics — keep those.
+    let h356 = extract(Path::new("tests/fixtures/356.pptx")).unwrap();
+    let body = h356.slides.join("\n");
+    assert!(
+        body.contains("Ca un cerb setos de ape,"),
+        "numbered lyric lines must survive"
+    );
+}

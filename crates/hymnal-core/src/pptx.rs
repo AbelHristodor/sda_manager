@@ -141,5 +141,16 @@ fn is_chrome(line: &str) -> bool {
     let l = line.trim();
     // Footer, matched case-insensitively on its distinctive prefix.
     let lower = l.to_lowercase();
-    lower.starts_with("imnuri creștine") || lower.starts_with("imnuri crestine") || is_marker(l)
+    lower.starts_with("imnuri creștine")
+        || lower.starts_with("imnuri crestine")
+        || is_marker(l)
+        || is_standalone_number(l)
+}
+
+/// True for a line that is ONLY a number with an optional trailing dot, e.g.
+/// "1", "2." — the per-slide slide-number. A line like "1. Ca un cerb…" is NOT
+/// matched (lyrics follow the number), so numbered verse lines survive.
+fn is_standalone_number(line: &str) -> bool {
+    let l = line.trim().trim_end_matches('.');
+    !l.is_empty() && l.chars().all(|c| c.is_ascii_digit())
 }
