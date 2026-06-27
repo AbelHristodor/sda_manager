@@ -53,8 +53,10 @@ to update). Additional libraries are plain folders you point the app at.
 
 Config is a TOML file in the OS config directory:
 
-- **macOS:** `~/Library/Application Support/HymnFinder/config.toml`
+- **macOS:** `~/Library/Application Support/org.hymnal.HymnFinder/config.toml`
 - **Windows:** `%APPDATA%\hymnal\HymnFinder\config\config.toml`
+
+The cloned default library lives next to it under `…/org.hymnal.HymnFinder/default-library`, and the index cache under `~/Library/Caches/org.hymnal.HymnFinder/index.bin`. The app fast-forward-pulls the default library on each launch, so newly published hymns appear automatically.
 
 Example (index a local folder directly, no git):
 
