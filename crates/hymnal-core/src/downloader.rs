@@ -13,7 +13,6 @@ pub struct DownloadProgress {
     pub percent: f32,
     pub speed: String,
     pub eta: String,
-    pub title: String,
 }
 
 /// Events streamed from the download worker to the UI.
@@ -45,7 +44,6 @@ pub fn parse_progress_line(line: &str) -> Option<DownloadProgress> {
         percent,
         speed,
         eta,
-        title: String::new(),
     })
 }
 
@@ -94,6 +92,34 @@ fn which_in_path(stem: &str) -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
+/// Download `url` to `dest` using `agent`, removing a partial file on failure.
+fn download_to(agent: &ureq::Agent, url: &str, dest: &Path) -> anyhow::Result<()> {
+    let result = (|| -> anyhow::Result<()> {
+        let resp = agent.get(url).call()?;
+        let mut reader = resp.into_reader();
+        let mut file = std::fs::File::create(dest)?;
+        std::io::copy(&mut reader, &mut file)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(dest);
+    }
+    result
+}
+
+/// Mark `path` executable on Unix (no-op elsewhere).
+fn make_executable(path: &Path) -> anyhow::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(path)?.permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(path, perms)?;
+    }
+    let _ = path; // silence unused warning on non-unix
+    Ok(())
+}
+
 /// GitHub release asset name for yt-dlp on the current platform.
 fn ytdlp_asset_name() -> &'static str {
     if cfg!(target_os = "windows") {
@@ -109,6 +135,7 @@ fn ytdlp_asset_name() -> &'static str {
 /// tools dir if necessary. Returns the path to the binary.
 pub fn ensure_ytdlp() -> anyhow::Result<PathBuf> {
     if let Some(p) = find_existing("yt-dlp") {
+        maybe_self_update(&p);
         return Ok(p);
     }
     let dir = tools_dir().ok_or_else(|| anyhow::anyhow!("no data directory available"))?;
@@ -121,22 +148,145 @@ pub fn ensure_ytdlp() -> anyhow::Result<PathBuf> {
     let agent = ureq::AgentBuilder::new()
         .timeout(std::time::Duration::from_secs(120))
         .build();
-    let resp = agent.get(&url).call()?;
     let tmp = dir.join(format!("{}.part", binary_name("yt-dlp")));
-    {
-        let mut reader = resp.into_reader();
-        let mut file = std::fs::File::create(&tmp)?;
-        std::io::copy(&mut reader, &mut file)?;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&tmp)?.permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&tmp, perms)?;
-    }
+    // GitHub releases/latest/download issues a 302 to the CDN; ureq follows
+    // redirects by default (do not disable that).
+    download_to(&agent, &url, &tmp)?;
+    make_executable(&tmp)?;
     std::fs::rename(&tmp, &dest)?;
     Ok(dest)
+}
+
+/// Download URL for a static ffmpeg build for the current platform.
+fn ffmpeg_archive_url() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "https://github.com/yt-dlp/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip"
+    } else if cfg!(target_os = "macos") {
+        // evermeet.cx is a third-party ffmpeg builder (yt-dlp's FFmpeg-Builds
+        // has no macOS asset). HTTPS-only; no checksum verification.
+        "https://evermeet.cx/ffmpeg/getrelease/zip"
+    } else {
+        "https://github.com/yt-dlp/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-gpl.tar.xz"
+    }
+}
+
+/// Extract the ffmpeg binary from a zip archive (Windows/macOS builds) into `dest`.
+fn extract_ffmpeg_from_zip(archive: &Path, dest: &Path) -> anyhow::Result<()> {
+    let file = std::fs::File::open(archive)?;
+    let mut zip = zip::ZipArchive::new(file)?;
+    let target = binary_name("ffmpeg");
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i)?;
+        if !entry.is_file() {
+            continue;
+        }
+        let name = entry.name().to_string();
+        // Match the ffmpeg binary whether it's at the archive root (macOS) or
+        // nested under bin/ (Windows builds).
+        if name == target || name.ends_with(&format!("/{target}")) {
+            let mut out = std::fs::File::create(dest)?;
+            std::io::copy(&mut entry, &mut out)?;
+            return Ok(());
+        }
+    }
+    anyhow::bail!("ffmpeg binary not found in zip archive")
+}
+
+/// Extract the ffmpeg binary from a tar.xz archive (Linux builds) into `dest`.
+fn extract_ffmpeg_from_tar_xz(archive: &Path, dest: &Path) -> anyhow::Result<()> {
+    let file = std::fs::File::open(archive)?;
+    let xz = xz2::read::XzDecoder::new(file);
+    let mut tar = tar::Archive::new(xz);
+    for entry in tar.entries()? {
+        let mut entry = entry?;
+        let path = entry.path()?.into_owned();
+        let is_ffmpeg = path.file_name().and_then(|n| n.to_str()) == Some("ffmpeg")
+            && path.to_string_lossy().contains("/bin/");
+        if is_ffmpeg {
+            let mut out = std::fs::File::create(dest)?;
+            std::io::copy(&mut entry, &mut out)?;
+            return Ok(());
+        }
+    }
+    anyhow::bail!("ffmpeg binary not found in tar.xz archive")
+}
+
+/// Ensure an ffmpeg binary exists, downloading a static build for the current
+/// platform into the tools dir if necessary. Returns the path to the binary.
+pub fn ensure_ffmpeg() -> anyhow::Result<PathBuf> {
+    if let Some(p) = find_existing("ffmpeg") {
+        return Ok(p);
+    }
+    let dir = tools_dir().ok_or_else(|| anyhow::anyhow!("no data directory available"))?;
+    std::fs::create_dir_all(&dir)?;
+    let dest = dir.join(binary_name("ffmpeg"));
+    let url = ffmpeg_archive_url();
+    // ffmpeg archives are tens of MB; allow a generous timeout.
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(300))
+        .build();
+    let archive = dir.join("ffmpeg-archive.part");
+    // GitHub releases/latest/download (and evermeet.cx) redirect to a CDN;
+    // ureq follows redirects by default.
+    download_to(&agent, url, &archive)?;
+    let tmp = dir.join(format!("{}.part", binary_name("ffmpeg")));
+    let extracted = if url.ends_with(".tar.xz") {
+        extract_ffmpeg_from_tar_xz(&archive, &tmp)
+    } else {
+        extract_ffmpeg_from_zip(&archive, &tmp)
+    };
+    let _ = std::fs::remove_file(&archive);
+    if extracted.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    extracted?;
+    make_executable(&tmp)?;
+    std::fs::rename(&tmp, &dest)?;
+    Ok(dest)
+}
+
+/// Path to the timestamp file recording the last yt-dlp self-update attempt.
+fn ytdlp_update_stamp() -> Option<PathBuf> {
+    tools_dir().map(|d| d.join(".yt-dlp-last-update"))
+}
+
+/// True if the last self-update was more than 24h ago (or never).
+fn should_self_update(stamp: &Path) -> bool {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let last = std::fs::read_to_string(stamp)
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .unwrap_or(0);
+    now.saturating_sub(last) > 24 * 3600
+}
+
+/// Best-effort `yt-dlp -U`, at most once per 24h, and only for the copy we
+/// manage in the tools dir (never a system/PATH install). Failures are ignored;
+/// the timestamp is always written so we don't retry on every download.
+fn maybe_self_update(ytdlp: &Path) {
+    let managed = tools_dir().map(|d| ytdlp.starts_with(&d)).unwrap_or(false);
+    if !managed {
+        return;
+    }
+    let Some(stamp) = ytdlp_update_stamp() else {
+        return;
+    };
+    if !should_self_update(&stamp) {
+        return;
+    }
+    let _ = Command::new(ytdlp)
+        .arg("-U")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let _ = std::fs::write(&stamp, now.to_string());
 }
 
 /// yt-dlp progress template that produces lines our parser understands.
@@ -157,9 +307,18 @@ pub fn download(url: &str, dir: &Path, tx: &Sender<DownloadEvent>) {
         }
     };
 
-    let have_ffmpeg = find_existing("ffmpeg").is_some();
-    // With ffmpeg we can merge best video+audio; without it, take the best
-    // pre-merged single-file format so the download still succeeds.
+    // Ensure a destination we can actually write to before doing any work.
+    if let Err(e) = std::fs::create_dir_all(dir) {
+        let _ = tx.send(DownloadEvent::Failed {
+            message: format!("Cannot use download folder: {e}"),
+        });
+        return;
+    }
+
+    // Auto-download ffmpeg so we can merge best video+audio. If it can't be
+    // obtained, fall back to the best pre-merged single-file format.
+    let ffmpeg = ensure_ffmpeg();
+    let have_ffmpeg = ffmpeg.is_ok();
     let format = if have_ffmpeg { "bv*+ba/b" } else { "b" };
 
     let output_template = dir.join("%(title)s.%(ext)s");
@@ -174,7 +333,8 @@ pub fn download(url: &str, dir: &Path, tx: &Sender<DownloadEvent>) {
         .arg(url)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    if have_ffmpeg {
+    if let Ok(ref ffmpeg_path) = ffmpeg {
+        cmd.args(["--ffmpeg-location", &ffmpeg_path.to_string_lossy()]);
         cmd.args(["--merge-output-format", "mp4"]);
     }
 
@@ -286,6 +446,19 @@ mod tests {
     fn returns_none_when_absent_from_data_dir() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(resolve_in_dir(dir.path(), "yt-dlp"), None);
+    }
+
+    #[test]
+    fn ffmpeg_url_matches_platform() {
+        let url = ffmpeg_archive_url();
+        assert!(!url.is_empty());
+        if cfg!(target_os = "windows") {
+            assert!(url.ends_with(".zip"));
+        } else if cfg!(target_os = "macos") {
+            assert!(url.ends_with("zip"));
+        } else {
+            assert!(url.ends_with(".tar.xz"));
+        }
     }
 
     #[test]
