@@ -18,3 +18,9 @@ env_logger = "0.11"
 
 [build-dependencies]
 slint-build = "1.8"
+
+# Embeds the .exe icon as a Windows resource. Only pulled in when building on
+# Windows (the release job builds the Windows binary natively), so it's absent
+# on macOS/Linux.
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
