@@ -29,6 +29,7 @@ global Theme {
 
 component NavItem inherits Rectangle {
     in property <string> label;
+    in property <image> icon;
     in property <bool> selected;
     callback clicked();
     height: 40px;
@@ -36,19 +37,24 @@ component NavItem inherits Rectangle {
     background: selected ? Theme.nav-sel : transparent;
     HorizontalBox {
         padding-left: 12px;
+        padding-right: 12px;
         alignment: start;
         spacing: 10px;
-        Rectangle {
-            width: 16px; height: 16px;
-            border-radius: 5px;
-            background: selected ? Theme.accent : Theme.accent-soft;
-            opacity: selected ? 1.0 : 0.6;
+        Image {
+            width: 18px;
+            height: 18px;
+            source: root.icon;
+            // Tint the monochrome SVG to follow the theme: accent when active,
+            // dimmed otherwise.
+            colorize: selected ? Theme.accent-soft : Theme.text-dim;
+            y: (parent.height - self.height) / 2;
         }
         Text {
             text: label;
             color: selected ? Theme.text : Theme.text-dim;
             font-weight: selected ? 700 : 400;
             vertical-alignment: center;
+            overflow: elide;
         }
     }
     TouchArea { clicked => { root.clicked(); } }
@@ -56,7 +62,7 @@ component NavItem inherits Rectangle {
 
 component Sidebar inherits Rectangle {
     in-out property <int> active-tab;
-    width: 150px;
+    width: 190px;
     background: Theme.rail;
     VerticalBox {
         padding: 14px;
@@ -72,11 +78,13 @@ component Sidebar inherits Rectangle {
         Rectangle { height: 8px; }
         NavItem {
             label: "Library";
+            icon: @image-url("../../../assets/icon-library.svg");
             selected: root.active-tab == 0;
             clicked => { root.active-tab = 0; }
         }
         NavItem {
             label: "Video Downloader";
+            icon: @image-url("../../../assets/icon-download.svg");
             selected: root.active-tab == 1;
             clicked => { root.active-tab = 1; }
         }
@@ -107,6 +115,19 @@ component LibraryPanel inherits Rectangle {
     // catches arrow keys to drive the list (Up/Down) and slides (Left/Right).
     forward-focus: search;
     background: Theme.bg;
+
+    // Pull keyboard focus back into the search field. Called on creation and
+    // whenever the user returns to this tab, so arrow-key browsing always works
+    // without an extra click into the search box.
+    public function focus-input() {
+        search.focus();
+    }
+
+    // `init` fires each time the panel is mounted (the parent `if` re-creates it
+    // on every tab switch), so returning to the Library tab re-focuses search.
+    init => {
+        self.focus-input();
+    }
 
     key-handler := FocusScope {
         // capture-key-pressed fires top-down BEFORE the focused LineEdit's
@@ -178,7 +199,7 @@ component LibraryPanel inherits Rectangle {
 
                         // Slide navigation.
                         HorizontalBox {
-                            height: 36px;
+                            height: 44px;
                             alignment: start;
                             spacing: 8px;
                             Button {
