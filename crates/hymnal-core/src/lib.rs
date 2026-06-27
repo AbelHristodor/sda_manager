@@ -7,3 +7,4 @@ pub mod search;
 pub mod sync;
 pub mod downloader;
 pub mod refresh;
+pub mod update;

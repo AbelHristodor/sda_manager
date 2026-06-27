@@ -21,6 +21,10 @@ git2 = { version = "0.19", features = ["vendored-libgit2"] }
 walkdir = "2"
 ureq = "2"
 log = "0.4"
+# `ureq` selects the pure-Rust HTTP client backend (self_update 0.44 has no
+# default HTTP backend when `default-features = false`); combined with `rustls`
+# it uses rustls TLS and avoids any system OpenSSL dependency.
+self_update = { version = "0.44", default-features = false, features = ["archive-tar", "archive-zip", "compression-flate2", "rustls", "ureq"] }
 
 [dev-dependencies]
 tempfile = "3"
