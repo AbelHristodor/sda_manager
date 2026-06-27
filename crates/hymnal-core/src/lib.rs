@@ -5,3 +5,4 @@ pub mod library;
 pub mod pptx;
 pub mod search;
 pub mod sync;
+pub mod downloader;
