@@ -19,62 +19,86 @@ export component AppWindow inherits Window {
     // Fired when the highlighted row changes (keyboard or click).
     callback current-changed(int);
 
+    // Typing focus lives in the search field; the surrounding FocusScope
+    // catches arrow keys the single-line field ignores and drives the list.
     forward-focus: search;
 
-    VerticalBox {
-        Text {
-            text: root.status;
-            color: gray;
-        }
-
-        search := LineEdit {
-            placeholder-text: "Search by number, title, or lyrics…";
-            edited(text) => {
-                root.query-changed(text);
+    key-handler := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.UpArrow) {
+                if (root.current-index > 0) {
+                    list.set-current-item(root.current-index - 1);
+                }
+                return accept;
             }
-            // Enter opens the currently highlighted hymn.
-            accepted(text) => {
+            if (event.text == Key.DownArrow) {
+                if (root.current-index < root.results.length - 1) {
+                    list.set-current-item(root.current-index + 1);
+                }
+                return accept;
+            }
+            if (event.text == Key.Return) {
                 root.open-current();
+                return accept;
             }
+            return reject;
         }
 
-        HorizontalBox {
-            list := StandardListView {
-                width: 40%;
-                model: root.results;
-                current-item <=> root.current-index;
-                current-item-changed(index) => {
-                    root.current-changed(index);
+        VerticalBox {
+            Text {
+                text: root.status;
+                color: gray;
+            }
+
+            search := LineEdit {
+                placeholder-text: "Search by number, title, or lyrics…";
+                edited(text) => {
+                    root.query-changed(text);
+                }
+                // Enter opens the currently highlighted hymn.
+                accepted(text) => {
+                    root.open-current();
                 }
             }
 
-            VerticalBox {
-                Text {
-                    text: root.preview-title;
-                    font-size: 18px;
-                    font-weight: 700;
-                }
-
-                ScrollView {
-                    Text {
-                        text: root.preview-body;
-                        wrap: word-wrap;
+            HorizontalBox {
+                list := StandardListView {
+                    width: 40%;
+                    model: root.results;
+                    current-item <=> root.current-index;
+                    current-item-changed(index) => {
+                        root.current-changed(index);
                     }
                 }
 
-                HorizontalBox {
-                    height: 40px;
-                    Button {
-                        text: "Open in PowerPoint";
-                        clicked => {
-                            root.open-current();
+                VerticalBox {
+                    Text {
+                        text: root.preview-title;
+                        font-size: 18px;
+                        font-weight: 700;
+                    }
+
+                    ScrollView {
+                        Text {
+                            text: root.preview-body;
+                            wrap: word-wrap;
                         }
                     }
 
-                    Button {
-                        text: "Reveal in folder";
-                        clicked => {
-                            root.reveal-current();
+                    HorizontalBox {
+                        height: 40px;
+                        Button {
+                            text: "Open in PowerPoint";
+                            clicked => {
+                                root.open-current();
+                            }
+                        }
+
+                        Button {
+                            text: "Reveal in folder";
+                            clicked => {
+                                root.reveal-current();
+                            }
                         }
                     }
                 }

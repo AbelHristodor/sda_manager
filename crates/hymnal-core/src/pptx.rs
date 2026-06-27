@@ -68,27 +68,42 @@ fn slide_index(name: &str) -> u32 {
         .unwrap_or(u32::MAX)
 }
 
-/// Extract `<a:t>` text runs from one slide's XML as trimmed non-empty lines.
+/// Extract slide text as one line per paragraph (`<a:p>`).
+///
+/// PowerPoint frequently splits a single visible line into several `<a:t>`
+/// runs (e.g. "Ca un " + "cerb" + " setos de " + "ape") for formatting or
+/// spell-check boundaries. We join all runs within a paragraph so the full
+/// line is reconstructed, then trim; empty paragraphs are dropped.
 fn slide_text_lines(xml: &str) -> Result<Vec<String>> {
+    // Don't trim text events: leading/trailing spaces inside a run (like the
+    // trailing space in "Ca un ") are significant when joining runs.
     let mut reader = Reader::from_str(xml);
-    reader.config_mut().trim_text(true);
     let mut lines = Vec::new();
     let mut in_t = false;
+    let mut current = String::new();
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf)? {
+            Event::Start(e) if e.local_name().as_ref() == b"p" => current.clear(),
+            Event::End(e) if e.local_name().as_ref() == b"p" => {
+                let line = current.trim().to_string();
+                if !line.is_empty() {
+                    lines.push(line);
+                }
+                current.clear();
+            }
             Event::Start(e) if e.local_name().as_ref() == b"t" => in_t = true,
             Event::End(e) if e.local_name().as_ref() == b"t" => in_t = false,
-            Event::Text(t) if in_t => {
-                let s = t.unescape()?.trim().to_string();
-                if !s.is_empty() {
-                    lines.push(s);
-                }
-            }
+            Event::Text(t) if in_t => current.push_str(&t.unescape()?),
             Event::Eof => break,
             _ => {}
         }
         buf.clear();
+    }
+    // Flush any trailing text not wrapped in a closing </a:p> (defensive).
+    let line = current.trim().to_string();
+    if !line.is_empty() {
+        lines.push(line);
     }
     Ok(lines)
 }

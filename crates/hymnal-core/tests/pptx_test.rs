@@ -22,3 +22,14 @@ fn number_from_three_digit_filename() {
     assert_eq!(parsed.number, Some(150));
     assert!(parsed.title.contains("Cerul, pământul"));
 }
+
+#[test]
+fn title_joins_runs_split_within_a_paragraph() {
+    // Hymn 356's title is split across four <a:t> runs in one <a:p>:
+    // "Ca un " + "cerb" + " setos de " + "ape". The parser must join runs
+    // within a paragraph so the full title survives, not just "Ca un".
+    let parsed = extract(Path::new("tests/fixtures/356.pptx")).unwrap();
+    assert_eq!(parsed.number, Some(356));
+    assert_eq!(parsed.title, "Ca un cerb setos de ape");
+    assert!(!parsed.title.starts_with("Imnul"));
+}

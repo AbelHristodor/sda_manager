@@ -26,20 +26,32 @@ The binary is at `target/release/hymnal-gui`.
 ## Run
 
 ```
-cargo run -p hymnal-gui
+cargo run --release -p hymnal-gui
 ```
+
+Use `--release` for day-to-day use — search is noticeably snappier than a debug
+build (~5–15 ms vs tens of ms per keystroke over ~900 hymns). Dependencies are
+compiled optimized even in debug builds (see `profile.dev.package."*"` in the
+workspace `Cargo.toml`), so `cargo run` is usable for development too.
 
 On first run the app reads its config (see below). If no git-managed library
 is configured it clones the default hymns repository into the OS data
-directory and indexes it. Indexing runs on a background thread, so the window
-stays responsive; a status line shows progress. Subsequent launches reuse a
-cached index and only re-parse files whose modification time changed.
+directory and indexes it; it fast-forward-pulls that library on every launch so
+newly published hymns appear automatically. Indexing runs on a background
+thread, so the window stays responsive; a status line shows progress.
+Subsequent launches reuse a cached index and only re-parse files whose
+modification time changed.
 
 - **Search:** type in the search bar — results rank across hymn number, title,
-  filename, and lyrics, accent-insensitively.
-- **Preview:** select a result to read its extracted verses in the right pane.
+  filename, and lyrics, accent-insensitively. The top match is highlighted as
+  you type (fzf-style).
+- **Keyboard:** ↑/↓ move the highlight; **Enter** opens the highlighted hymn.
+- **Preview:** the highlighted result's verses show in the right pane.
 - **Open in PowerPoint:** launches the `.pptx` in the OS default handler.
 - **Reveal in folder:** opens the containing folder.
+
+Set `RUST_LOG=hymnal_gui=debug,hymnal_core=debug` to see indexing, sync, and
+query activity logged to the console.
 
 ## Libraries
 

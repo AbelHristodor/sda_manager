@@ -119,7 +119,9 @@ fn main() -> anyhow::Result<()> {
     // ---- UI-thread state ----
     let searcher: Rc<std::cell::RefCell<Option<Searcher>>> =
         Rc::new(std::cell::RefCell::new(None));
-    let last_hits: Rc<std::cell::RefCell<Vec<HymnEntry>>> =
+    // Maps a visible result row -> the entry's index within the searcher, so we
+    // never clone hymn bodies per keystroke; entries are looked up on demand.
+    let row_to_entry: Rc<std::cell::RefCell<Vec<usize>>> =
         Rc::new(std::cell::RefCell::new(Vec::new()));
 
     ui.set_status("Loading hymn library…".into());
@@ -145,7 +147,7 @@ fn main() -> anyhow::Result<()> {
 
     // ---- Search-on-edit: query -> hits -> rows, auto-select first row ----
     let searcher_for_query = searcher.clone();
-    let hits_for_query = last_hits.clone();
+    let rows_for_query = row_to_entry.clone();
     let weak3 = ui.as_weak();
     ui.on_query_changed(move |q| {
         let guard = searcher_for_query.borrow();
@@ -156,14 +158,16 @@ fn main() -> anyhow::Result<()> {
         let hits = s.search(&q);
         debug!("query '{q}' -> {} hits", hits.len());
 
-        let rows: Vec<StandardListViewItem> = hits
-            .iter()
-            .take(200)
-            .map(|h| StandardListViewItem::from(SharedString::from(row_label(&h.entry))))
-            .collect();
+        // Build display rows and the row->entry-index map in one pass; entries
+        // stay in the searcher (no body cloning).
+        let mut rows: Vec<StandardListViewItem> = Vec::with_capacity(hits.len().min(200));
+        let mut map: Vec<usize> = Vec::with_capacity(hits.len().min(200));
+        for h in hits.iter().take(200) {
+            rows.push(StandardListViewItem::from(SharedString::from(row_label(h.entry))));
+            map.push(h.index);
+        }
         let row_count = rows.len();
-        *hits_for_query.borrow_mut() =
-            hits.into_iter().take(200).map(|h| h.entry).collect();
+        *rows_for_query.borrow_mut() = map;
 
         if let Some(ui) = weak3.upgrade() {
             ui.set_results(ModelRc::from(Rc::new(VecModel::from(rows))));
@@ -175,7 +179,8 @@ fn main() -> anyhow::Result<()> {
     });
 
     // ---- Highlight changed (keyboard arrows or click) -> update preview ----
-    let hits_for_sel = last_hits.clone();
+    let searcher_for_sel = searcher.clone();
+    let rows_for_sel = row_to_entry.clone();
     let weak6 = ui.as_weak();
     ui.on_current_changed(move |idx| {
         let Some(ui) = weak6.upgrade() else { return };
@@ -184,7 +189,13 @@ fn main() -> anyhow::Result<()> {
             ui.set_preview_body("".into());
             return;
         }
-        if let Some(entry) = hits_for_sel.borrow().get(idx as usize) {
+        let guard = searcher_for_sel.borrow();
+        let Some(s) = guard.as_ref() else { return };
+        let entry = rows_for_sel
+            .borrow()
+            .get(idx as usize)
+            .and_then(|&ei| s.entry(ei));
+        if let Some(entry) = entry {
             debug!("preview #{:?} {}", entry.number, entry.title);
             let title = format!(
                 "{}{}",
@@ -197,7 +208,8 @@ fn main() -> anyhow::Result<()> {
     });
 
     // ---- Open the highlighted hymn externally (Enter / button) ----
-    let hits_for_open = last_hits.clone();
+    let searcher_for_open = searcher.clone();
+    let rows_for_open = row_to_entry.clone();
     let weak4 = ui.as_weak();
     ui.on_open_current(move || {
         let Some(ui) = weak4.upgrade() else { return };
@@ -206,16 +218,24 @@ fn main() -> anyhow::Result<()> {
             debug!("open ignored: no row highlighted");
             return;
         }
-        if let Some(entry) = hits_for_open.borrow().get(idx as usize) {
-            info!("opening {}", entry.path.display());
-            if let Err(e) = open::that(&entry.path) {
-                warn!("failed to open {}: {e}", entry.path.display());
+        let guard = searcher_for_open.borrow();
+        let Some(s) = guard.as_ref() else { return };
+        let path = rows_for_open
+            .borrow()
+            .get(idx as usize)
+            .and_then(|&ei| s.entry(ei))
+            .map(|e| e.path.clone());
+        if let Some(path) = path {
+            info!("opening {}", path.display());
+            if let Err(e) = open::that(&path) {
+                warn!("failed to open {}: {e}", path.display());
             }
         }
     });
 
     // ---- Reveal the highlighted hymn's folder ----
-    let hits_for_reveal = last_hits.clone();
+    let searcher_for_reveal = searcher.clone();
+    let rows_for_reveal = row_to_entry.clone();
     let weak5 = ui.as_weak();
     ui.on_reveal_current(move || {
         let Some(ui) = weak5.upgrade() else { return };
@@ -223,12 +243,17 @@ fn main() -> anyhow::Result<()> {
         if idx < 0 {
             return;
         }
-        if let Some(entry) = hits_for_reveal.borrow().get(idx as usize) {
-            if let Some(parent) = entry.path.parent() {
-                info!("revealing {}", parent.display());
-                if let Err(e) = open::that(parent) {
-                    warn!("failed to reveal {}: {e}", parent.display());
-                }
+        let guard = searcher_for_reveal.borrow();
+        let Some(s) = guard.as_ref() else { return };
+        let path = rows_for_reveal
+            .borrow()
+            .get(idx as usize)
+            .and_then(|&ei| s.entry(ei))
+            .map(|e| e.path.clone());
+        if let Some(parent) = path.as_deref().and_then(|p| p.parent()) {
+            info!("revealing {}", parent.display());
+            if let Err(e) = open::that(parent) {
+                warn!("failed to reveal {}: {e}", parent.display());
             }
         }
     });

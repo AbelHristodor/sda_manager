@@ -40,17 +40,36 @@ impl Searcher {
         Searcher { items }
     }
 
+    /// Number of indexed hymns.
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    /// True when no hymns are indexed.
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    /// Look up an entry by the `index` carried on a [`SearchHit`].
+    pub fn entry(&self, index: usize) -> Option<&HymnEntry> {
+        self.items.get(index).map(|it| &it.entry)
+    }
+
     /// Rank entries against `query`. Empty query returns all entries sorted by
     /// hymn number. Otherwise fuzzy-matches across number, title, filename and
     /// body, keeping the best-scoring field per entry.
-    pub fn search(&self, query: &str) -> Vec<SearchHit> {
+    ///
+    /// Hits borrow their entry from the searcher (no body cloning per keystroke).
+    pub fn search(&self, query: &str) -> Vec<SearchHit<'_>> {
         let q = fold(query);
         if q.trim().is_empty() {
-            let mut all: Vec<SearchHit> = self
+            let mut all: Vec<SearchHit<'_>> = self
                 .items
                 .iter()
-                .map(|it| SearchHit {
-                    entry: it.entry.clone(),
+                .enumerate()
+                .map(|(index, it)| SearchHit {
+                    index,
+                    entry: &it.entry,
                     score: 0,
                     field: MatchField::Number,
                 })
@@ -62,8 +81,8 @@ impl Searcher {
         let mut matcher = Matcher::new(Config::DEFAULT);
         let pattern = Pattern::parse(&q, CaseMatching::Ignore, Normalization::Smart);
 
-        let mut hits: Vec<SearchHit> = Vec::new();
-        for it in &self.items {
+        let mut hits: Vec<SearchHit<'_>> = Vec::new();
+        for (index, it) in self.items.iter().enumerate() {
             // Field weight nudges ties toward more authoritative fields.
             let candidates = [
                 (MatchField::Number, &it.number_str, 4u32),
@@ -99,7 +118,8 @@ impl Searcher {
             }
             if let Some((field, score)) = best {
                 hits.push(SearchHit {
-                    entry: it.entry.clone(),
+                    index,
+                    entry: &it.entry,
                     score,
                     field,
                 });

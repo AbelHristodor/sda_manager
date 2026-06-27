@@ -27,10 +27,13 @@ pub enum MatchField {
     Body,
 }
 
-/// A ranked search result.
+/// A ranked search result. Borrows the matched entry from the `Searcher` to
+/// avoid cloning hymn bodies on every keystroke; `index` identifies the entry
+/// within the searcher for later lookup (preview/open).
 #[derive(Debug, Clone)]
-pub struct SearchHit {
-    pub entry: HymnEntry,
+pub struct SearchHit<'a> {
+    pub index: usize,
+    pub entry: &'a HymnEntry,
     pub score: u32,
     pub field: MatchField,
 }
