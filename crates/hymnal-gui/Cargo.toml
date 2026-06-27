@@ -1,0 +1,8 @@
+[package]
+name = "hymnal-gui"
+edition.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "hymnal-gui"
+path = "src/main.rs"
