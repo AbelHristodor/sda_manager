@@ -23,6 +23,11 @@ pub fn check_and_stage_update() -> Result<UpdateOutcome> {
         .repo_owner(REPO_OWNER)
         .repo_name(REPO_NAME)
         .bin_name(BIN_NAME)
+        // Release archives nest the binary one level deep, as
+        // `hymnal-gui-<target>/hymnal-gui` (see .github/workflows/release.yml).
+        // Without this, self_update looks for `hymnal-gui` at the archive root
+        // and fails with "Could not find the required path in the archive".
+        .bin_path_in_archive("{{ bin }}-{{ target }}/{{ bin }}")
         .current_version(current)
         .no_confirm(true)
         .show_download_progress(false)
