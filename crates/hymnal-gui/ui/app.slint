@@ -2,6 +2,9 @@ import { LineEdit, StandardListView, Button, ScrollView, VerticalBox, Horizontal
 
 export component AppWindow inherits Window {
     title: "Hymn Finder";
+    // Live window/titlebar icon, embedded at compile time. Path is relative to
+    // this .slint file. (The .exe file icon is set separately in build.rs.)
+    icon: @image-url("../../../assets/icon.png");
     preferred-width: 900px;
     preferred-height: 600px;
 
