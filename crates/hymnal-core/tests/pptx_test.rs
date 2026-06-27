@@ -33,3 +33,14 @@ fn title_joins_runs_split_within_a_paragraph() {
     assert_eq!(parsed.title, "Ca un cerb setos de ape");
     assert!(!parsed.title.starts_with("Imnul"));
 }
+
+#[test]
+fn preserves_text_per_slide() {
+    let parsed = extract(Path::new("tests/fixtures/001.pptx")).unwrap();
+    // Hymn 1 has 5 slides.
+    assert_eq!(parsed.slides.len(), 5);
+    // The first slide holds the title.
+    assert!(parsed.slides[0].contains("Plecaţi-vă lui Dumnezeu"));
+    // body is exactly the slides joined by newlines (search input unchanged).
+    assert_eq!(parsed.body, parsed.slides.join("\n"));
+}

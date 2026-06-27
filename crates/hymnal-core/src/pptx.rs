@@ -10,6 +10,8 @@ pub struct ParsedPptx {
     pub number: Option<u32>,
     pub title: String,
     pub body: String,
+    /// Text of each slide (paragraphs joined by `\n`), in presentation order.
+    pub slides: Vec<String>,
 }
 
 /// Extract searchable text from a .pptx file.
@@ -43,7 +45,7 @@ pub fn extract(path: &Path) -> Result<ParsedPptx> {
         .collect();
     slide_names.sort_by_key(|n| slide_index(n));
 
-    let mut all_lines: Vec<String> = Vec::new();
+    let mut slides: Vec<String> = Vec::with_capacity(slide_names.len());
     let mut first_slide_lines: Vec<String> = Vec::new();
     for (idx, name) in slide_names.iter().enumerate() {
         let mut xml = String::new();
@@ -52,12 +54,12 @@ pub fn extract(path: &Path) -> Result<ParsedPptx> {
         if idx == 0 {
             first_slide_lines = lines.clone();
         }
-        all_lines.extend(lines);
+        slides.push(lines.join("\n"));
     }
 
     let title = pick_title(&first_slide_lines);
-    let body = all_lines.join("\n");
-    Ok(ParsedPptx { number, title, body })
+    let body = slides.join("\n");
+    Ok(ParsedPptx { number, title, body, slides })
 }
 
 /// Numeric slide index from "ppt/slides/slide12.xml" -> 12.
