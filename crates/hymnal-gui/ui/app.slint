@@ -1,27 +1,106 @@
 import { LineEdit, StandardListView, Button, ScrollView, VerticalBox, HorizontalBox } from "std-widgets.slint";
 
-export component AppWindow inherits Window {
-    title: "Hymn Finder";
-    preferred-width: 900px;
-    preferred-height: 600px;
+export struct DownloadState {
+    // "" idle | "resolving" | "downloading" | "done" | "failed"
+    status: string,
+    percent: float,
+    speed: string,
+    eta: string,
+    title: string,
+    message: string,
+}
 
-    // Rows shown in the results finder, one line of text each (fzf-style).
+global Theme {
+    out property <color> bg: #0f172a;
+    out property <color> rail: #111827;
+    out property <color> panel: #162033;
+    out property <color> panel-border: #1f2c44;
+    out property <color> field: #1e293b;
+    out property <color> field-border: #334155;
+    out property <color> accent: #0ea5e9;
+    out property <color> accent-soft: #38bdf8;
+    out property <color> text: #e2e8f0;
+    out property <color> text-dim: #94a3b8;
+    out property <color> nav-sel: #1e293b;
+    out property <color> danger: #f87171;
+    out property <length> radius: 9px;
+    out property <length> gap: 12px;
+}
+
+component NavItem inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+    callback clicked();
+    height: 40px;
+    border-radius: Theme.radius;
+    background: selected ? Theme.nav-sel : transparent;
+    HorizontalBox {
+        padding-left: 12px;
+        alignment: start;
+        spacing: 10px;
+        Rectangle {
+            width: 16px; height: 16px;
+            border-radius: 5px;
+            background: selected ? Theme.accent : Theme.accent-soft;
+            opacity: selected ? 1.0 : 0.6;
+        }
+        Text {
+            text: label;
+            color: selected ? Theme.text : Theme.text-dim;
+            font-weight: selected ? 700 : 400;
+            vertical-alignment: center;
+        }
+    }
+    TouchArea { clicked => { root.clicked(); } }
+}
+
+component Sidebar inherits Rectangle {
+    in-out property <int> active-tab;
+    width: 150px;
+    background: Theme.rail;
+    VerticalBox {
+        padding: 14px;
+        spacing: 6px;
+        alignment: start;
+        Text {
+            text: "SDA MANAGER";
+            color: Theme.accent-soft;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+        Rectangle { height: 8px; }
+        NavItem {
+            label: "Library";
+            selected: root.active-tab == 0;
+            clicked => { root.active-tab = 0; }
+        }
+        NavItem {
+            label: "Video Downloader";
+            selected: root.active-tab == 1;
+            clicked => { root.active-tab = 1; }
+        }
+    }
+}
+
+// Library panel: existing fzf-style finder with keyboard nav, preserved exactly,
+// wrapped in the dark theme. Member names match what main.rs expects.
+component LibraryPanel inherits Rectangle {
     in property <[StandardListViewItem]> results;
     in property <string> preview-title;
     in property <string> preview-body;
     in property <string> status;
-    // Two-way bound to the list's highlighted row so Rust can read/set it.
-    in-out property <int> current-index: -1;
+    in-out property <int> current-index;
 
     callback query-changed(string);
     callback open-current();
     callback reveal-current();
-    // Fired when the highlighted row changes (keyboard or click).
     callback current-changed(int);
 
-    // Typing focus lives in the search field; the surrounding FocusScope
-    // catches arrow keys the single-line field ignores and drives the list.
+    // Typing focus lives in the search field; the surrounding FocusScope catches
+    // arrow keys the single-line field ignores and drives the list.
     forward-focus: search;
+    background: Theme.bg;
 
     key-handler := FocusScope {
         key-pressed(event) => {
@@ -45,23 +124,18 @@ export component AppWindow inherits Window {
         }
 
         VerticalBox {
-            Text {
-                text: root.status;
-                color: gray;
-            }
+            padding: 16px;
+            spacing: Theme.gap;
+            Text { text: root.status; color: Theme.text-dim; }
 
             search := LineEdit {
                 placeholder-text: "Search by number, title, or lyrics…";
-                edited(text) => {
-                    root.query-changed(text);
-                }
-                // Enter opens the currently highlighted hymn.
-                accepted(text) => {
-                    root.open-current();
-                }
+                edited(text) => { root.query-changed(text); }
+                accepted(text) => { root.open-current(); }
             }
 
             HorizontalBox {
+                spacing: Theme.gap;
                 list := StandardListView {
                     width: 40%;
                     model: root.results;
@@ -71,38 +145,213 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                VerticalBox {
-                    Text {
-                        text: root.preview-title;
-                        font-size: 18px;
-                        font-weight: 700;
-                    }
-
-                    ScrollView {
+                Rectangle {
+                    background: Theme.panel;
+                    border-radius: Theme.radius;
+                    border-width: 1px;
+                    border-color: Theme.panel-border;
+                    VerticalBox {
+                        padding: 14px;
+                        spacing: 10px;
                         Text {
-                            text: root.preview-body;
+                            text: root.preview-title;
+                            color: Theme.text;
+                            font-size: 18px;
+                            font-weight: 700;
                             wrap: word-wrap;
                         }
-                    }
-
-                    HorizontalBox {
-                        height: 40px;
-                        Button {
-                            text: "Open in PowerPoint";
-                            clicked => {
-                                root.open-current();
+                        ScrollView {
+                            Text {
+                                text: root.preview-body;
+                                color: Theme.text;
+                                wrap: word-wrap;
                             }
                         }
-
-                        Button {
-                            text: "Reveal in folder";
-                            clicked => {
-                                root.reveal-current();
+                        HorizontalBox {
+                            height: 40px;
+                            alignment: start;
+                            spacing: 8px;
+                            Button {
+                                text: "Open in PowerPoint";
+                                clicked => { root.open-current(); }
+                            }
+                            Button {
+                                text: "Reveal in folder";
+                                clicked => { root.reveal-current(); }
                             }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+component DownloaderPanel inherits Rectangle {
+    in property <DownloadState> state;
+    in-out property <string> url;
+    in property <string> dir;
+    callback choose-folder();
+    callback start-download();
+    callback reveal-download();
+
+    property <bool> busy: root.state.status == "resolving" || root.state.status == "downloading";
+
+    background: Theme.bg;
+    VerticalBox {
+        padding: 16px;
+        spacing: Theme.gap;
+        alignment: start;
+        Text {
+            text: "Video Downloader";
+            color: Theme.text;
+            font-size: 20px;
+            font-weight: 700;
+        }
+        Text {
+            text: "Paste a YouTube link and choose where to save it.";
+            color: Theme.text-dim;
+        }
+        LineEdit {
+            placeholder-text: "Paste a YouTube URL…";
+            text <=> root.url;
+            enabled: !root.busy;
+        }
+        HorizontalBox {
+            spacing: 8px;
+            Rectangle {
+                background: Theme.field;
+                border-radius: Theme.radius;
+                border-width: 1px;
+                border-color: Theme.field-border;
+                height: 36px;
+                horizontal-stretch: 1;
+                Text {
+                    x: 12px;
+                    width: parent.width - 24px;
+                    text: root.dir;
+                    color: Theme.text-dim;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+            Button {
+                text: "Choose…";
+                enabled: !root.busy;
+                clicked => { root.choose-folder(); }
+            }
+        }
+        Button {
+            text: root.busy ? "Downloading…" : "Download";
+            enabled: !root.busy && root.url != "";
+            clicked => { root.start-download(); }
+        }
+
+        if root.state.status != "": Rectangle {
+            background: Theme.panel;
+            border-radius: Theme.radius;
+            border-width: 1px;
+            border-color: Theme.panel-border;
+            VerticalBox {
+                padding: 14px;
+                spacing: 8px;
+                Text {
+                    text: root.state.title != "" ? root.state.title : "Preparing…";
+                    color: Theme.text;
+                    font-weight: 600;
+                    overflow: elide;
+                }
+                if root.state.status == "resolving": Text {
+                    text: "Setting up downloader…";
+                    color: Theme.text-dim;
+                }
+                if root.state.status == "downloading": Rectangle {
+                    height: 8px;
+                    border-radius: 4px;
+                    background: Theme.field;
+                    Rectangle {
+                        x: 0;
+                        height: parent.height;
+                        width: parent.width * (root.state.percent / 100);
+                        border-radius: 4px;
+                        background: Theme.accent;
+                    }
+                }
+                if root.state.status == "downloading": Text {
+                    text: Math.round(root.state.percent) + "%  ·  " + root.state.speed + "  ·  ETA " + root.state.eta;
+                    color: Theme.text-dim;
+                    font-size: 12px;
+                }
+                if root.state.status == "done": HorizontalBox {
+                    alignment: start;
+                    spacing: 10px;
+                    Text { text: "✓ Download complete"; color: Theme.accent-soft; vertical-alignment: center; }
+                    Button {
+                        text: "Reveal in folder";
+                        clicked => { root.reveal-download(); }
+                    }
+                }
+                if root.state.status == "failed": Text {
+                    text: "Download failed: " + root.state.message;
+                    color: Theme.danger;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "SDA Manager";
+    preferred-width: 980px;
+    preferred-height: 620px;
+    background: Theme.bg;
+
+    in-out property <int> active-tab: 0;
+
+    // Library (existing contract — names unchanged)
+    in property <[StandardListViewItem]> results;
+    in property <string> preview-title;
+    in property <string> preview-body;
+    in property <string> status;
+    in-out property <int> current-index: -1;
+    callback query-changed(string);
+    callback open-current();
+    callback reveal-current();
+    callback current-changed(int);
+
+    // Downloader
+    in property <DownloadState> download;
+    in-out property <string> download-url;
+    in property <string> download-dir;
+    callback choose-folder();
+    callback start-download();
+    callback reveal-download();
+
+    HorizontalBox {
+        padding: 0;
+        spacing: 0;
+        Sidebar { active-tab <=> root.active-tab; }
+        if root.active-tab == 0: LibraryPanel {
+            horizontal-stretch: 1;
+            results: root.results;
+            preview-title: root.preview-title;
+            preview-body: root.preview-body;
+            status: root.status;
+            current-index <=> root.current-index;
+            query-changed(q) => { root.query-changed(q); }
+            open-current => { root.open-current(); }
+            reveal-current => { root.reveal-current(); }
+            current-changed(i) => { root.current-changed(i); }
+        }
+        if root.active-tab == 1: DownloaderPanel {
+            horizontal-stretch: 1;
+            state: root.download;
+            url <=> root.download-url;
+            dir: root.download-dir;
+            choose-folder => { root.choose-folder(); }
+            start-download => { root.start-download(); }
+            reveal-download => { root.reveal-download(); }
         }
     }
 }
