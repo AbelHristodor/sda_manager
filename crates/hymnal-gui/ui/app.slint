@@ -129,10 +129,20 @@ component LibraryPanel inherits Rectangle {
         search.focus();
     }
 
-    // `init` fires each time the panel is mounted (the parent `if` re-creates it
-    // on every tab switch), so returning to the Library tab re-focuses search.
-    init => {
-        self.focus-input();
+    // Calling search.focus() straight from `init` runs while the tree is still
+    // being built — before the window is mapped — so the focus request is
+    // dropped and the FocusScope below never receives key events (every arrow
+    // key appears dead). A one-shot Timer defers the focus to the first
+    // event-loop tick, after the panel is live, so focus reliably lands in the
+    // search box. The parent `if` re-creates this panel on every tab switch, so
+    // this also re-focuses search when returning to the Library tab.
+    focus-timer := Timer {
+        interval: 1ms;
+        running: true;
+        triggered => {
+            root.focus-input();
+            self.running = false;
+        }
     }
 
     key-handler := FocusScope {
