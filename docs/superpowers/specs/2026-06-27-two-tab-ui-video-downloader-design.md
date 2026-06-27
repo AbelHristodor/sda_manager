@@ -33,7 +33,7 @@ cross-platform redistribution.
 
 | Topic | Decision |
 |---|---|
-| Download engine | Auto-download `yt-dlp` into app data dir on first use; self-update via `yt-dlp -U`. Detect `ffmpeg`; auto-download it too, else fall back to pre-merged ≤720p. |
+| Download engine | Auto-download `yt-dlp` into app data dir on first use; **periodic** self-update via `yt-dlp -U` (at most once per day). `ffmpeg` is **auto-downloaded** into the app data dir too (per-OS archive), so best-quality merged video works with zero setup; if the fetch fails, fall back to the best pre-merged single-file format and note "best single-file quality" in the UI. |
 | Navigation | Dark vertical **sidebar** rail with brand + two nav items. |
 | Visual style | **Slate Dark** — dark slate backgrounds, sky-blue (`#0ea5e9`/`#38bdf8`) accents. |
 | Download scope | **Simple** — always best quality video (video+audio merged). |
