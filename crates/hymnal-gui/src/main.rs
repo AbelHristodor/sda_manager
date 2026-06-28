@@ -77,11 +77,46 @@ fn row_label(entry: &HymnEntry) -> String {
     format!("{number}{}  · {}", entry.title, entry.library)
 }
 
+use hymnal_core::theme::store;
 use hymnal_core::theme::{Background, HAlign, Theme};
 
 /// Convert a core Rgba to a Slint Color.
 fn to_color(c: hymnal_core::theme::Rgba) -> slint::Color {
     slint::Color::from_argb_u8(c.a, c.r, c.g, c.b)
+}
+
+/// Re-list themes from disk and push names into the UI list model.
+fn refresh_theme_list(ui: &AppWindow, themes: &Rc<std::cell::RefCell<Vec<Theme>>>) {
+    let dir = hymnal_core::library::themes_dir();
+    let list = dir
+        .as_deref()
+        .map(store::list_themes)
+        .unwrap_or_else(|| vec![Theme::default()]);
+    let rows: Vec<slint::StandardListViewItem> = list
+        .iter()
+        .map(|t| slint::StandardListViewItem::from(slint::SharedString::from(t.name.clone())))
+        .collect();
+    ui.set_theme_names(slint::ModelRc::from(Rc::new(slint::VecModel::from(rows))));
+    *themes.borrow_mut() = list;
+}
+
+/// Load a theme's values into the editor's edit-* properties.
+fn load_theme_into_editor(ui: &AppWindow, t: &Theme) {
+    ui.set_edit_font_family(t.text.font_family.clone().into());
+    ui.set_edit_font_size(t.text.font_size_pt.unwrap_or(44.0));
+    ui.set_edit_font_weight(t.text.font_weight as i32);
+    ui.set_edit_text_color(to_color(t.text.color));
+    let bg = match &t.background.kind {
+        Background::Solid { color } => to_color(*color),
+        Background::Gradient { from, .. } => to_color(*from),
+        Background::Image { .. } => to_color(t.text.color),
+    };
+    ui.set_edit_bg_color(bg);
+    ui.set_edit_h_align(match t.text.h_align {
+        HAlign::Left => "left",
+        HAlign::Center => "center",
+        HAlign::Right => "right",
+    }.into());
 }
 
 /// Push a theme + slide text onto a ProjectorWindow's flattened properties.
@@ -208,6 +243,11 @@ fn main() -> anyhow::Result<()> {
         &dl_cfg.borrow(),
     )))));
     ui.set_library_status("".into());
+
+    // ---- Themes editor state + initial population ----
+    let themes: Rc<std::cell::RefCell<Vec<Theme>>> = Rc::new(std::cell::RefCell::new(Vec::new()));
+    refresh_theme_list(&ui, &themes);
+    load_theme_into_editor(&ui, &Theme::default());
 
     // Channel carrying download events from the worker thread to the UI thread.
     let (dl_tx, dl_rx) = mpsc::channel::<DownloadEvent>();
@@ -740,6 +780,72 @@ fn main() -> anyhow::Result<()> {
         ui.set_library_status(strings_togglib.borrow().status_indexing.clone().into());
         reindex_tog(cfg.clone());
     });
+
+    // ---- Themes editor handlers ----
+    {
+        let themes = themes.clone();
+        let weak = ui.as_weak();
+        ui.on_theme_selected(move |i| {
+            let Some(ui) = weak.upgrade() else { return };
+            if let Some(t) = themes.borrow().get(i.max(0) as usize) {
+                load_theme_into_editor(&ui, t);
+            }
+        });
+    }
+    {
+        let themes = themes.clone();
+        let weak = ui.as_weak();
+        ui.on_save_theme(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let idx = ui.get_theme_index().max(0) as usize;
+            let mut t = themes.borrow().get(idx).cloned().unwrap_or_default();
+            if t.is_builtin_default() {
+                t.name = "Custom".into();
+            }
+            t.text.font_family = ui.get_edit_font_family().to_string();
+            t.text.font_size_pt = Some(ui.get_edit_font_size());
+            t.text.font_weight = ui.get_edit_font_weight() as u16;
+            let c = ui.get_edit_text_color();
+            t.text.color = hymnal_core::theme::Rgba::new(c.red(), c.green(), c.blue(), c.alpha());
+            let b = ui.get_edit_bg_color();
+            t.background.kind = Background::Solid {
+                color: hymnal_core::theme::Rgba::new(b.red(), b.green(), b.blue(), b.alpha()),
+            };
+            if let Some(dir) = hymnal_core::library::themes_dir() {
+                match store::save_theme(&dir, &t) {
+                    Ok(()) => info!("saved theme {}", t.name),
+                    Err(e) => warn!("save theme failed: {e}"),
+                }
+            }
+            refresh_theme_list(&ui, &themes);
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        ui.on_new_theme(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let mut t = Theme::default();
+            t.name = "Custom".into();
+            load_theme_into_editor(&ui, &t);
+        });
+    }
+    {
+        let themes = themes.clone();
+        let weak = ui.as_weak();
+        ui.on_delete_theme(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let idx = ui.get_theme_index().max(0) as usize;
+            if let Some(t) = themes.borrow().get(idx).cloned() {
+                if let Some(dir) = hymnal_core::library::themes_dir() {
+                    if let Err(e) = store::delete_theme(&dir, &t.name) {
+                        warn!("delete theme failed: {e}");
+                    }
+                }
+            }
+            refresh_theme_list(&ui, &themes);
+        });
+    }
+    ui.on_edit_changed(|| {});
 
     // Keep the timer alive for the lifetime of the application; dropping it
     // would stop the channel polling.
