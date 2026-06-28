@@ -104,38 +104,54 @@ fn to_color(c: hymnal_core::theme::Rgba) -> slint::Color {
     slint::Color::from_argb_u8(c.a, c.r, c.g, c.b)
 }
 
-/// Re-list themes from disk and push names into the UI list model.
-fn refresh_theme_list(ui: &AppWindow, themes: &Rc<std::cell::RefCell<Vec<Theme>>>) {
+/// Weight dropdown options shown in the UI, paired with their numeric weight.
+const WEIGHT_OPTIONS: &[(&str, u16)] = &[("Light", 300), ("Regular", 400), ("Medium", 500), ("Bold", 700), ("Black", 900)];
+
+fn weight_index(w: u16) -> i32 {
+    WEIGHT_OPTIONS.iter().position(|(_, v)| *v == w).unwrap_or(3) as i32
+}
+
+/// Push the theme list into the thumbnail-grid models (parallel arrays).
+fn refresh_theme_list(ui: &AppWindow, themes: &Rc<std::cell::RefCell<Vec<Theme>>>, active_name: &str) {
     let dir = hymnal_core::library::themes_dir();
-    let list = dir
-        .as_deref()
-        .map(store::list_themes)
+    let list = dir.as_deref().map(hymnal_core::theme::store::list_themes)
         .unwrap_or_else(|| vec![Theme::default()]);
-    let rows: Vec<slint::StandardListViewItem> = list
-        .iter()
-        .map(|t| slint::StandardListViewItem::from(slint::SharedString::from(t.name.clone())))
-        .collect();
-    ui.set_theme_names(slint::ModelRc::from(Rc::new(slint::VecModel::from(rows))));
+    let names: Vec<slint::SharedString> = list.iter().map(|t| t.name.clone().into()).collect();
+    let bgs: Vec<slint::Color> = list.iter().map(|t| match &t.background.kind {
+        Background::Solid { color } => to_color(*color),
+        Background::Gradient { from, .. } => to_color(*from),
+        Background::Image { .. } => to_color(t.text.color),
+    }).collect();
+    let fgs: Vec<slint::Color> = list.iter().map(|t| to_color(t.text.color)).collect();
+    let fonts: Vec<slint::SharedString> = list.iter().map(|t| t.text.font_family.clone().into()).collect();
+    let active_idx = list.iter().position(|t| t.name == active_name).unwrap_or(0) as i32;
+    ui.set_theme_names(slint::ModelRc::from(Rc::new(slint::VecModel::from(names))));
+    ui.set_theme_bgs(slint::ModelRc::from(Rc::new(slint::VecModel::from(bgs))));
+    ui.set_theme_fgs(slint::ModelRc::from(Rc::new(slint::VecModel::from(fgs))));
+    ui.set_theme_fonts(slint::ModelRc::from(Rc::new(slint::VecModel::from(fonts))));
+    ui.set_active_index(active_idx);
     *themes.borrow_mut() = list;
 }
 
 /// Load a theme's values into the editor's edit-* properties.
-fn load_theme_into_editor(ui: &AppWindow, t: &Theme) {
-    ui.set_edit_font_family(t.text.font_family.clone().into());
+fn load_theme_into_editor(ui: &AppWindow, t: &Theme, families: &[String]) {
+    let fidx = families.iter().position(|f| f.eq_ignore_ascii_case(&t.text.font_family)).unwrap_or(0) as i32;
+    ui.set_edit_font_index(fidx);
+    ui.set_edit_weight_index(weight_index(t.text.font_weight));
     ui.set_edit_font_size(t.text.font_size_pt.unwrap_or(44.0));
-    ui.set_edit_font_weight(t.text.font_weight as i32);
     ui.set_edit_text_color(to_color(t.text.color));
-    let bg = match &t.background.kind {
-        Background::Solid { color } => to_color(*color),
-        Background::Gradient { from, .. } => to_color(*from),
-        Background::Image { .. } => to_color(t.text.color),
+    ui.set_edit_text_hex(t.text.color.to_hex().into());
+    let (bg_color, bg_rgba) = match &t.background.kind {
+        Background::Solid { color } => (to_color(*color), *color),
+        Background::Gradient { from, .. } => (to_color(*from), *from),
+        Background::Image { .. } => (to_color(t.text.color), t.text.color),
     };
-    ui.set_edit_bg_color(bg);
+    ui.set_edit_bg_color(bg_color);
+    ui.set_edit_bg_hex(bg_rgba.to_hex().into());
     ui.set_edit_h_align(match t.text.h_align {
-        HAlign::Left => "left",
-        HAlign::Center => "center",
-        HAlign::Right => "right",
+        HAlign::Left => "left", HAlign::Center => "center", HAlign::Right => "right",
     }.into());
+    ui.set_edit_name(t.name.clone().into());
 }
 
 /// Push a theme + slide text onto a ProjectorWindow's flattened properties.
@@ -297,8 +313,6 @@ fn main() -> anyhow::Result<()> {
 
     // ---- Themes editor state + initial population ----
     let themes: Rc<std::cell::RefCell<Vec<Theme>>> = Rc::new(std::cell::RefCell::new(Vec::new()));
-    refresh_theme_list(&ui, &themes);
-    load_theme_into_editor(&ui, &Theme::default());
 
     // ---- Control tab state (projection) ----
     use hymnal_core::present::PresentationState;
@@ -308,26 +322,11 @@ fn main() -> anyhow::Result<()> {
     let displays = Rc::new(projector::list_displays());
     let active_theme = Rc::new(std::cell::RefCell::new(Theme::default()));
 
-    // Populate display picker (plain-string ComboBox model).
-    {
-        let rows: Vec<slint::SharedString> = displays
-            .iter()
-            .map(|d| slint::SharedString::from(d.label.clone()))
-            .collect();
-        ui.set_display_names(slint::ModelRc::from(Rc::new(slint::VecModel::from(rows))));
-        ui.set_display_index(projector::default_display_index(&displays));
-    }
-    // Populate the Control theme ComboBox (plain strings) from the themes list.
-    {
-        let names: Vec<slint::SharedString> = themes
-            .borrow()
-            .iter()
-            .map(|t| slint::SharedString::from(t.name.clone()))
-            .collect();
-        ui.set_ctl_theme_names(slint::ModelRc::from(Rc::new(slint::VecModel::from(names))));
-    }
+    // Default output display; a persisted choice (restored below) overrides it.
+    ui.set_display_index(projector::default_display_index(&displays));
 
-    // Restore active theme + output display from persisted config.
+    // Restore active theme + output display from persisted config (before the
+    // theme list is built so the active thumbnail is highlighted correctly).
     if let Some(p) = hymnal_core::library::config_path() {
         let cfg = Config::load(&p).unwrap_or_default();
         if let (Some(name), Some(dir)) =
@@ -340,6 +339,37 @@ fn main() -> anyhow::Result<()> {
         if let Some(d) = cfg.output_display {
             ui.set_display_index(d);
         }
+    }
+
+    // Font families + weight options for the editor dropdowns.
+    let families: Rc<Vec<String>> = Rc::new(fonts::families());
+    {
+        let rows: Vec<slint::SharedString> = families.iter().map(|f| f.clone().into()).collect();
+        ui.set_font_families(slint::ModelRc::from(Rc::new(slint::VecModel::from(rows))));
+        let weights: Vec<slint::SharedString> = WEIGHT_OPTIONS.iter().map(|(l, _)| (*l).into()).collect();
+        ui.set_weight_options(slint::ModelRc::from(Rc::new(slint::VecModel::from(weights))));
+    }
+    let draft = Rc::new(std::cell::RefCell::new(Theme::default()));
+    refresh_theme_list(&ui, &themes, &active_theme.borrow().name);
+    load_theme_into_editor(&ui, &draft.borrow(), &families);
+    ui.set_selected_index(0);
+
+    // Populate display picker (plain-string ComboBox model).
+    {
+        let rows: Vec<slint::SharedString> = displays
+            .iter()
+            .map(|d| slint::SharedString::from(d.label.clone()))
+            .collect();
+        ui.set_display_names(slint::ModelRc::from(Rc::new(slint::VecModel::from(rows))));
+    }
+    // Populate the Control theme ComboBox (plain strings) from the themes list.
+    {
+        let names: Vec<slint::SharedString> = themes
+            .borrow()
+            .iter()
+            .map(|t| slint::SharedString::from(t.name.clone()))
+            .collect();
+        ui.set_ctl_theme_names(slint::ModelRc::from(Rc::new(slint::VecModel::from(names))));
     }
 
     // Channel carrying download events from the worker thread to the UI thread.
@@ -875,72 +905,169 @@ fn main() -> anyhow::Result<()> {
     });
 
     // ---- Themes editor handlers ----
+    // Select a thumbnail -> load into the editor draft.
     {
-        let themes = themes.clone();
-        let weak = ui.as_weak();
+        let themes = themes.clone(); let draft = draft.clone();
+        let families = families.clone(); let weak = ui.as_weak();
         ui.on_theme_selected(move |i| {
             let Some(ui) = weak.upgrade() else { return };
             if let Some(t) = themes.borrow().get(i.max(0) as usize) {
-                load_theme_into_editor(&ui, t);
+                *draft.borrow_mut() = t.clone();
+                load_theme_into_editor(&ui, t, &families);
+                ui.set_selected_index(i);
             }
         });
     }
     {
-        let themes = themes.clone();
-        let weak = ui.as_weak();
+        let draft = draft.clone(); let families = families.clone(); let weak = ui.as_weak();
+        ui.on_font_picked(move |i| {
+            let Some(ui) = weak.upgrade() else { return };
+            if let Some(f) = families.get(i.max(0) as usize) {
+                draft.borrow_mut().text.font_family = f.clone();
+                ui.set_edit_font_index(i);
+            }
+        });
+    }
+    {
+        let draft = draft.clone(); let weak = ui.as_weak();
+        ui.on_weight_picked(move |i| {
+            let Some(ui) = weak.upgrade() else { return };
+            let w = WEIGHT_OPTIONS.get(i.max(0) as usize).map(|(_, v)| *v).unwrap_or(400);
+            draft.borrow_mut().text.font_weight = w;
+            ui.set_edit_weight_index(i);
+        });
+    }
+    {
+        let draft = draft.clone(); let weak = ui.as_weak();
+        ui.on_size_changed(move |v| {
+            let Some(ui) = weak.upgrade() else { return };
+            draft.borrow_mut().text.font_size_pt = Some(v);
+            ui.set_edit_font_size(v);
+        });
+    }
+    {
+        let draft = draft.clone(); let weak = ui.as_weak();
+        ui.on_align_picked(move |a| {
+            let Some(ui) = weak.upgrade() else { return };
+            draft.borrow_mut().text.h_align = match a.as_str() {
+                "left" => HAlign::Left, "right" => HAlign::Right, _ => HAlign::Center,
+            };
+            ui.set_edit_h_align(a);
+        });
+    }
+    {
+        let draft = draft.clone(); let weak = ui.as_weak();
+        ui.on_text_hex_edited(move |t| {
+            let Some(ui) = weak.upgrade() else { return };
+            if let Some(rgba) = hymnal_core::theme::Rgba::from_hex(&t) {
+                draft.borrow_mut().text.color = rgba;
+                ui.set_edit_text_color(to_color(rgba));
+                ui.set_edit_text_hex(rgba.to_hex().into());
+            }
+        });
+    }
+    {
+        let draft = draft.clone(); let weak = ui.as_weak();
+        ui.on_text_preset(move |c| {
+            let Some(ui) = weak.upgrade() else { return };
+            let rgba = hymnal_core::theme::Rgba::new(c.red(), c.green(), c.blue(), 255);
+            draft.borrow_mut().text.color = rgba;
+            ui.set_edit_text_color(c);
+            ui.set_edit_text_hex(rgba.to_hex().into());
+        });
+    }
+    {
+        let draft = draft.clone(); let weak = ui.as_weak();
+        ui.on_bg_hex_edited(move |t| {
+            let Some(ui) = weak.upgrade() else { return };
+            if let Some(rgba) = hymnal_core::theme::Rgba::from_hex(&t) {
+                draft.borrow_mut().background.kind = Background::Solid { color: rgba };
+                ui.set_edit_bg_color(to_color(rgba));
+                ui.set_edit_bg_hex(rgba.to_hex().into());
+            }
+        });
+    }
+    {
+        let draft = draft.clone(); let weak = ui.as_weak();
+        ui.on_bg_preset(move |c| {
+            let Some(ui) = weak.upgrade() else { return };
+            let rgba = hymnal_core::theme::Rgba::new(c.red(), c.green(), c.blue(), 255);
+            draft.borrow_mut().background.kind = Background::Solid { color: rgba };
+            ui.set_edit_bg_color(c);
+            ui.set_edit_bg_hex(rgba.to_hex().into());
+        });
+    }
+    {
+        let draft = draft.clone(); let families = families.clone(); let weak = ui.as_weak();
+        ui.on_new_theme(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let t = Theme { name: "Custom".into(), ..Theme::default() };
+            *draft.borrow_mut() = t.clone();
+            load_theme_into_editor(&ui, &t, &families);
+        });
+    }
+    {
+        let themes = themes.clone(); let draft = draft.clone();
+        let active_theme = active_theme.clone(); let weak = ui.as_weak();
         ui.on_save_theme(move || {
             let Some(ui) = weak.upgrade() else { return };
-            let idx = ui.get_theme_index().max(0) as usize;
-            let mut t = themes.borrow().get(idx).cloned().unwrap_or_default();
-            if t.is_builtin_default() {
-                t.name = "Custom".into();
-            }
-            t.text.font_family = ui.get_edit_font_family().to_string();
-            t.text.font_size_pt = Some(ui.get_edit_font_size());
-            t.text.font_weight = ui.get_edit_font_weight() as u16;
-            let c = ui.get_edit_text_color();
-            t.text.color = hymnal_core::theme::Rgba::new(c.red(), c.green(), c.blue(), c.alpha());
-            let b = ui.get_edit_bg_color();
-            t.background.kind = Background::Solid {
-                color: hymnal_core::theme::Rgba::new(b.red(), b.green(), b.blue(), b.alpha()),
-            };
+            let mut t = draft.borrow().clone();
+            t.name = ui.get_edit_name().to_string();
+            if t.name.is_empty() || t.name == "Default" { t.name = "Custom".into(); }
             if let Some(dir) = hymnal_core::library::themes_dir() {
-                match store::save_theme(&dir, &t) {
+                match hymnal_core::theme::store::save_theme(&dir, &t) {
                     Ok(()) => info!("saved theme {}", t.name),
                     Err(e) => warn!("save theme failed: {e}"),
                 }
             }
-            refresh_theme_list(&ui, &themes);
+            *draft.borrow_mut() = t.clone();
+            refresh_theme_list(&ui, &themes, &active_theme.borrow().name);
         });
     }
     {
-        let weak = ui.as_weak();
-        ui.on_new_theme(move || {
-            let Some(ui) = weak.upgrade() else { return };
-            let t = Theme {
-                name: "Custom".into(),
-                ..Theme::default()
-            };
-            load_theme_into_editor(&ui, &t);
-        });
-    }
-    {
-        let themes = themes.clone();
-        let weak = ui.as_weak();
+        let themes = themes.clone(); let active_theme = active_theme.clone();
+        let projector = projector.clone(); let present = present.clone(); let weak = ui.as_weak();
         ui.on_delete_theme(move || {
             let Some(ui) = weak.upgrade() else { return };
-            let idx = ui.get_theme_index().max(0) as usize;
-            if let Some(t) = themes.borrow().get(idx).cloned() {
+            let idx = ui.get_selected_index().max(0) as usize;
+            let name = themes.borrow().get(idx).map(|t| t.name.clone());
+            if let Some(name) = name {
                 if let Some(dir) = hymnal_core::library::themes_dir() {
-                    if let Err(e) = store::delete_theme(&dir, &t.name) {
+                    if let Err(e) = hymnal_core::theme::store::delete_theme(&dir, &name) {
                         warn!("delete theme failed: {e}");
                     }
                 }
+                if active_theme.borrow().name == name {
+                    *active_theme.borrow_mut() = Theme::default();
+                    if let Some(p) = hymnal_core::library::config_path() {
+                        let mut cfg = Config::load(&p).unwrap_or_default();
+                        cfg.active_theme = Some("Default".into());
+                        let _ = cfg.save(&p);
+                    }
+                    push_to_projector(&projector, &active_theme.borrow(), &present.borrow());
+                }
             }
-            refresh_theme_list(&ui, &themes);
+            refresh_theme_list(&ui, &themes, &active_theme.borrow().name);
         });
     }
-    ui.on_edit_changed(|| {});
+    {
+        let themes = themes.clone(); let active_theme = active_theme.clone();
+        let projector = projector.clone(); let present = present.clone(); let weak = ui.as_weak();
+        ui.on_set_active(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let idx = ui.get_selected_index().max(0) as usize;
+            if let Some(t) = themes.borrow().get(idx).cloned() {
+                *active_theme.borrow_mut() = t.clone();
+                if let Some(p) = hymnal_core::library::config_path() {
+                    let mut cfg = Config::load(&p).unwrap_or_default();
+                    cfg.active_theme = Some(t.name.clone());
+                    let _ = cfg.save(&p);
+                }
+                push_to_projector(&projector, &active_theme.borrow(), &present.borrow());
+                refresh_theme_list(&ui, &themes, &t.name);
+            }
+        });
+    }
 
     // ---- Control tab handlers ----
     // Start projecting.
