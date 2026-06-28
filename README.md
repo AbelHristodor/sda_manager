@@ -1,107 +1,165 @@
-# Hymn Finder
+<div align="center">
 
-A small cross-platform desktop app to search a hymnal (PowerPoint `.pptx`
-files) by hymn number, title, or any line of the lyrics, then open the slide
-deck in PowerPoint.
+# SDA Manager
 
-Built in Rust with the [Slint](https://slint.dev) GUI toolkit. Search is
-fuzzy and diacritic-insensitive, so typing `plecati` finds *Plecaţi-vă*.
+**Find a hymn and put it on the screen — in seconds.**
+
+A free, cross-platform desktop app for projecting hymns during a service.
+Search a hymnal by number, title, or a half-remembered line of the lyrics,
+then project it full-screen on the sanctuary display with your own styling — no
+PowerPoint, no internet, no fiddling mid-service.
+
+Runs on **macOS**, **Windows**, and **Linux**. Available in **English**,
+**Italian**, and **Romanian**.
+
+[Download](https://github.com/AbelHristodor/sda_manager/releases) ·
+[Install](#install) · [Features](#features) · [For developers](#for-developers)
+
+</div>
+
+---
+
+## Why
+
+Getting the right hymn on the projector usually means hunting through folders of
+PowerPoint files, opening the right one, and starting the slideshow — while the
+congregation waits. SDA Manager replaces that with a single search box and a
+**Project** button. Type `plecati`, hit Enter, and *Plecaţi-vă* is on the wall.
+
+It ships with a full hymnal and stays current automatically, and you can add
+your own folders of slides on top.
+
+## Features
+
+- 🔎 **Instant fuzzy search** — search across hymn number, title, filename, and
+  every line of the lyrics. Accent-insensitive, so `plecati` finds *Plecaţi-vă*.
+  The best match is highlighted as you type.
+- 📽️ **Built-in projector** — project hymns full-screen on a second display.
+  The app draws the slides itself, so there's **no dependency on PowerPoint** and
+  it works the same on every OS. Live slide + next-slide preview on your laptop,
+  blank-screen toggle, and arrow-key control.
+- 🎨 **Custom themes** — design how projected slides look: fonts, sizes, colors,
+  backgrounds (solid, gradient, or image), alignment, and footer. Live preview,
+  multiple saved themes, switch the active one in a click.
+- 📚 **Your own libraries** — comes with a built-in hymnal that updates itself,
+  and you can add any folder of `.pptx` files alongside it. Enable, disable, or
+  remove your folders from Settings.
+- ⬇️ **Video downloader** — paste a YouTube link and save the video to a folder
+  you choose, with live progress. Handy for grabbing illustrations or special
+  music.
+- 🌍 **Multilingual UI** — English, Italian, and Romanian, auto-detected from
+  your system and switchable any time.
+- ⌨️ **Keyboard-first** — arrow keys to browse and step through slides, Enter to
+  open the highlighted hymn, `B` to blank the projector, `Esc` to stop. Built for
+  live use.
+- 🔄 **Always up to date** — the bundled hymnal refreshes on launch and the app
+  checks for new versions automatically.
 
 ## Install
 
-Prebuilt executables are published on the
+Prebuilt apps are on the
 [Releases](https://github.com/AbelHristodor/sda_manager/releases) page for
 macOS (Apple Silicon), Windows (x86_64), and Linux (x86_64).
 
-**macOS / Linux:**
+**macOS / Linux** — paste into a terminal:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/AbelHristodor/sda_manager/main/install.sh | sh
 ```
 
-Installs `hymnal-gui` to `~/.local/bin` (override with `BIN_DIR=…`). On macOS
-the binary is unsigned, so the first launch needs a right-click → **Open** in
-Finder to pass Gatekeeper.
+> On macOS the app is unsigned, so the first time you open it, right-click the
+> app and choose **Open** to get past Gatekeeper. (Installs to `~/.local/bin`;
+> override with `BIN_DIR=…`.)
 
-**Windows (PowerShell):**
+**Windows** — paste into PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/AbelHristodor/sda_manager/main/install.ps1 | iex
 ```
 
-Installs `hymnal-gui.exe` to `%LOCALAPPDATA%\Programs\hymnal-gui` and adds it to
-your user `PATH`.
+> Installs to `%LOCALAPPDATA%\Programs\hymnal-gui`, adds a Desktop shortcut, and
+> puts the app on your `PATH`.
 
-> Releases are produced manually (the **Release** workflow is run from the
-> Actions tab with a version like `v0.1.0`). The install one-liners fetch the
-> latest release, so they work only after the first release has been published.
+Prefer to build it yourself? See [For developers](#building-from-source).
 
-## Workspace layout
+## Using it
+
+1. **Search** — start typing in the Library tab. Results rank across number,
+   title, filename, and lyrics. ↑/↓ move the highlight.
+2. **Preview** — the highlighted hymn's slides show on the right; ←/→ step
+   through them.
+3. **Project** — click **Project** on a hymn to load it into the Control tab,
+   pick your output display, and **Start projecting**. ←/→ or Space advance
+   slides on the projector; `B` blanks the screen; `Esc` stops. (Enter opens the
+   hymn in PowerPoint instead, if you'd rather present there.)
+4. **Style it** — in the Themes tab, design how slides look and set the active
+   theme. The preview matches exactly what the projector shows.
+5. **Add your own hymns** — Settings → *Your library folders* → **Add folder…**
+   to index your own `.pptx` files alongside the built-in hymnal.
+
+Still have PowerPoint decks you'd rather run there? **Open in PowerPoint** and
+**Reveal in folder** are one click away from any search result.
+
+---
+
+## For developers
+
+SDA Manager is written in **Rust** with the [Slint](https://slint.dev) GUI
+toolkit. The slide projector is rendered natively by the app — it parses the
+text out of `.pptx` files and draws the slides itself.
+
+### Workspace layout
 
 ```
 crates/
-  hymnal-core/   # library: pptx text extraction, indexing, search, config, git sync
-  hymnal-gui/    # binary: Slint UI wired to the core on a worker thread
+  hymnal-core/   # pure logic: pptx text extraction, indexing, fuzzy search,
+                 # config, git sync, themes, presentation state — fully tested
+  hymnal-gui/    # Slint UI wired to the core on a worker thread; the projector
+                 # is a second Slint window
 ```
 
-## Build
+The core crate has no UI dependency, so its logic (extraction, diacritic
+folding, fuzzy ranking, cache invalidation, theme load/save, slide transitions)
+is unit-tested headlessly.
 
-```
-cargo build --release -p hymnal-gui
-```
+### Building from source
 
-The binary is at `target/release/hymnal-gui`.
-
-## Run
-
-```
-cargo run --release -p hymnal-gui
+```sh
+cargo build --release -p hymnal-gui      # binary at target/release/hymnal-gui
+cargo run   --release -p hymnal-gui      # build and run
 ```
 
-Use `--release` for day-to-day use — search is noticeably snappier than a debug
-build (~5–15 ms vs tens of ms per keystroke over ~900 hymns). Dependencies are
-compiled optimized even in debug builds (see `profile.dev.package."*"` in the
-workspace `Cargo.toml`), so `cargo run` is usable for development too.
+Use `--release` for daily use — search is noticeably snappier (~5–15 ms vs tens
+of ms per keystroke over ~900 hymns). Dependencies are compiled optimized even
+in debug builds (`profile.dev.package."*"` in the workspace `Cargo.toml`), so
+`cargo run` is fine for development.
 
-On first run the app reads its config (see below). If no git-managed library
-is configured it clones the default hymns repository into the OS data
-directory and indexes it; it fast-forward-pulls that library on every launch so
-newly published hymns appear automatically. Indexing runs on a background
-thread, so the window stays responsive; a status line shows progress.
-Subsequent launches reuse a cached index and only re-parse files whose
-modification time changed.
+Set `RUST_LOG=hymnal_gui=debug,hymnal_core=debug` to log indexing, sync, query,
+and projection activity to the console.
 
-- **Search:** type in the search bar — results rank across hymn number, title,
-  filename, and lyrics, accent-insensitively. The top match is highlighted as
-  you type (fzf-style).
-- **Keyboard:** ↑/↓ move the highlight; **Enter** opens the highlighted hymn.
-- **Preview:** the highlighted result's verses show in the right pane.
-- **Open in PowerPoint:** launches the `.pptx` in the OS default handler.
-- **Reveal in folder:** opens the containing folder.
-- **Languages:** the app UI is available in English, Italian, and Romanian,
-  selectable in the Settings tab (auto-detected from your OS on first run).
+### How libraries work
 
-Set `RUST_LOG=hymnal_gui=debug,hymnal_core=debug` to see indexing, sync, and
-query activity logged to the console.
+A *library* is a folder of `.pptx` files; you can use several. Each is crawled
+recursively (`~$` lock files and non-`.pptx` files are ignored). The default
+library is managed via git — cloned on first run, fast-forward-pulled on every
+launch so newly published hymns appear automatically. Additional libraries are
+plain folders you add in Settings. A cached index means subsequent launches only
+re-parse files whose modification time changed.
 
-## Libraries
-
-A *library* is a folder of `.pptx` files. You can use more than one. Each is
-crawled recursively; `~$` lock files and non-`.pptx` files are ignored.
-
-The default library is managed via git (clone on first run, fast-forward pull
-to update). Additional libraries are plain folders you point the app at.
-
-## Configuration
+### Configuration
 
 Config is a TOML file in the OS config directory:
 
 - **macOS:** `~/Library/Application Support/org.hymnal.HymnFinder/config.toml`
 - **Windows:** `%APPDATA%\hymnal\HymnFinder\config\config.toml`
+- **Linux:** `~/.config/HymnFinder/config.toml`
 
-The cloned default library lives next to it under `…/org.hymnal.HymnFinder/default-library`, and the index cache under `~/Library/Caches/org.hymnal.HymnFinder/index.bin`. The app fast-forward-pulls the default library on each launch, so newly published hymns appear automatically.
+The cloned default library lives under `…/org.hymnal.HymnFinder/default-library`,
+themes under `…/themes/*.json`, and the index cache under the OS cache dir
+(`…/org.hymnal.HymnFinder/index.bin`).
 
-Example (index a local folder directly, no git):
+Point `default_repo_url` at your own published hymns repository, and/or add
+libraries directly:
 
 ```toml
 default_repo_url = "https://github.com/CHANGEME/imnuri-crestine.git"
@@ -113,31 +171,31 @@ enabled = true
 managed_by_git = false
 ```
 
-Set `default_repo_url` to your published hymns repository. The index cache and
-the cloned default library live in the OS cache and data directories
-respectively.
+### Tests
 
-## Cross-compilation
-
-- **macOS → Windows:** add the target and a mingw-w64 toolchain, then build:
-  ```
-  rustup target add x86_64-pc-windows-gnu
-  cargo build --release -p hymnal-gui --target x86_64-pc-windows-gnu
-  ```
-  Slint's default (Femtovg/Skia software or GL) renderer works with the GNU
-  toolchain; install `mingw-w64` (e.g. `brew install mingw-w64`).
-- **Windows → macOS** is not supported directly; build natively on macOS.
-
-`git2` builds against the system libgit2 by default. For a self-contained
-cross build, enable the vendored library in `crates/hymnal-core/Cargo.toml`:
-`git2 = { version = "0.19", features = ["vendored-libgit2"] }`.
-
-## Tests
-
-```
+```sh
 cargo test -p hymnal-core
 ```
 
-Core logic (text extraction, diacritic folding, fuzzy ranking, index cache
-invalidation) is covered by unit and integration tests using real `.pptx`
-fixtures under `crates/hymnal-core/tests/fixtures/`.
+Covers text extraction, diacritic folding, fuzzy ranking, index-cache
+invalidation, theme JSON round-trips, and presentation-state transitions, using
+real `.pptx` fixtures under `crates/hymnal-core/tests/fixtures/`. The GUI and
+projector are thin and verified manually.
+
+### Cross-compilation
+
+- **macOS → Windows:** add the target and a mingw-w64 toolchain
+  (`brew install mingw-w64`):
+  ```sh
+  rustup target add x86_64-pc-windows-gnu
+  cargo build --release -p hymnal-gui --target x86_64-pc-windows-gnu
+  ```
+- **Windows → macOS** is not supported; build natively on macOS.
+
+`git2` builds against the system libgit2 by default; the release builds enable
+the `vendored-libgit2` feature for self-contained binaries.
+
+### Releases
+
+Releases are produced manually: run the **Release** workflow from the Actions
+tab with a tag like `v0.1.0`. The install one-liners fetch the latest release.
