@@ -13,6 +13,8 @@ pub struct DownloadProgress {
     pub percent: f32,
     pub speed: String,
     pub eta: String,
+    /// Video title, carried on every progress line (the template includes it).
+    pub title: String,
 }
 
 /// Events streamed from the download worker to the UI.
@@ -31,19 +33,24 @@ pub enum DownloadEvent {
 }
 
 /// Parse one yt-dlp output line into a `DownloadProgress`, if it is a progress
-/// line emitted by our template (`PROGRESS|<pct>%|<speed>|<eta>`). Returns
-/// `None` for any other line.
+/// line emitted by our template (`PROGRESS|<pct>%|<speed>|<eta>|<title>`).
+/// Returns `None` for any other line. The title field is last and may itself
+/// contain `|`, so it is taken as the remainder after the first four splits.
 pub fn parse_progress_line(line: &str) -> Option<DownloadProgress> {
     let rest = line.trim().strip_prefix("PROGRESS|")?;
-    let mut parts = rest.split('|');
+    // Split into at most 4 pieces: pct, speed, eta, then the title remainder.
+    let mut parts = rest.splitn(4, '|');
     let pct_raw = parts.next()?.trim().trim_end_matches('%').trim();
     let speed = parts.next()?.trim().to_string();
     let eta = parts.next()?.trim().to_string();
+    // Title is optional (older template had no title field).
+    let title = parts.next().unwrap_or("").trim().to_string();
     let percent = pct_raw.parse::<f32>().ok()?; // "N/A" => None
     Some(DownloadProgress {
         percent,
         speed,
         eta,
+        title,
     })
 }
 
@@ -313,9 +320,12 @@ fn maybe_self_update(ytdlp: &Path) {
         .spawn();
 }
 
-/// yt-dlp progress template that produces lines our parser understands.
+/// yt-dlp progress template that produces lines our parser understands. The
+/// title rides on every progress line via `%(info.title)s` so we get it without
+/// `--print` — `--print` puts yt-dlp in a quiet mode that SUPPRESSES progress
+/// output entirely, which previously left the UI stuck on "Setting up…".
 const PROGRESS_TEMPLATE: &str =
-    "download:PROGRESS|%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s";
+    "download:PROGRESS|%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(info.title)s";
 
 /// Download a single video from `url` into `dir`, streaming `DownloadEvent`s on
 /// `tx`. Blocks until the child process exits, so call it on a worker thread.
@@ -366,7 +376,6 @@ pub fn download(url: &str, dir: &Path, tx: &Sender<DownloadEvent>) {
         .args(["--fragment-retries", "10"])
         .args(["-f", format])
         .args(["--progress-template", PROGRESS_TEMPLATE])
-        .args(["--print", "before_dl:TITLE|%(title)s"])
         .arg("-o")
         .arg(&output_template)
         .arg(url)
@@ -400,10 +409,15 @@ pub fn download(url: &str, dir: &Path, tx: &Sender<DownloadEvent>) {
     });
 
     if let Some(out) = child.stdout.take() {
+        let mut sent_title = false;
         for line in BufReader::new(out).lines().map_while(Result::ok) {
-            if let Some(title) = line.trim().strip_prefix("TITLE|") {
-                let _ = tx.send(DownloadEvent::Title(title.to_string()));
-            } else if let Some(p) = parse_progress_line(&line) {
+            if let Some(p) = parse_progress_line(&line) {
+                // The title rides on every progress line; emit it once, the
+                // first time we see a non-empty one.
+                if !sent_title && !p.title.is_empty() {
+                    let _ = tx.send(DownloadEvent::Title(p.title.clone()));
+                    sent_title = true;
+                }
                 let _ = tx.send(DownloadEvent::Progress(p));
             }
         }
@@ -444,18 +458,35 @@ mod tests {
 
     #[test]
     fn parses_a_progress_line() {
-        let p = parse_progress_line("PROGRESS|42.0%|3.20MiB/s|00:18").unwrap();
+        let p = parse_progress_line("PROGRESS|42.0%|3.20MiB/s|00:18|My Song").unwrap();
         assert_eq!(p.percent, 42.0);
         assert_eq!(p.speed, "3.20MiB/s");
         assert_eq!(p.eta, "00:18");
+        assert_eq!(p.title, "My Song");
+    }
+
+    #[test]
+    fn parses_line_without_title_field() {
+        // Older template (no title) must still parse; title defaults to empty.
+        let p = parse_progress_line("PROGRESS|42.0%|3.20MiB/s|00:18").unwrap();
+        assert_eq!(p.percent, 42.0);
+        assert_eq!(p.title, "");
+    }
+
+    #[test]
+    fn title_with_pipe_is_preserved() {
+        // The title is the remainder after 4 splits, so internal `|` survives.
+        let p = parse_progress_line("PROGRESS|10.0%|1MiB/s|00:30|A | B | C").unwrap();
+        assert_eq!(p.title, "A | B | C");
     }
 
     #[test]
     fn handles_whitespace_and_percent_sign() {
-        let p = parse_progress_line("PROGRESS| 7.5%| 1.00KiB/s | 01:02 ").unwrap();
+        let p = parse_progress_line("PROGRESS| 7.5%| 1.00KiB/s | 01:02 | Tune ").unwrap();
         assert_eq!(p.percent, 7.5);
         assert_eq!(p.speed, "1.00KiB/s");
         assert_eq!(p.eta, "01:02");
+        assert_eq!(p.title, "Tune");
     }
 
     #[test]
