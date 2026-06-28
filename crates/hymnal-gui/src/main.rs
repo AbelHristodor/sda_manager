@@ -65,6 +65,12 @@ fn apply_language(ui: &AppWindow, lang: Language) -> Strings {
     g.set_theme_preview_sample(s.theme_preview_sample.clone().into());
     g.set_theme_font_label(s.theme_font_label.clone().into());
     g.set_theme_size_label(s.theme_size_label.clone().into());
+    g.set_theme_weight_label(s.theme_weight_label.clone().into());
+    g.set_theme_align_label(s.theme_align_label.clone().into());
+    g.set_theme_text_color_label(s.theme_text_color_label.clone().into());
+    g.set_theme_bg_color_label(s.theme_bg_color_label.clone().into());
+    g.set_theme_set_active(s.theme_set_active.clone().into());
+    g.set_theme_name_label(s.theme_name_label.clone().into());
     g.set_nav_control(s.nav_control.clone().into());
     g.set_control_heading(s.control_heading.clone().into());
     g.set_control_start(s.control_start.clone().into());
