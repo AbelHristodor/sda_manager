@@ -63,6 +63,44 @@ fn row_label(entry: &HymnEntry) -> String {
     format!("{number}{}  · {}", entry.title, entry.library)
 }
 
+/// Build the Slint `LibraryRow` model from the config, ensuring the default
+/// git-managed library appears even if it isn't yet written to the config on
+/// disk (mirrors refresh::register_default_library's "add if no managed entry").
+fn library_rows(cfg: &Config) -> Vec<LibraryRow> {
+    use hymnal_core::library::library_available;
+    let mut rows: Vec<LibraryRow> = cfg
+        .libraries
+        .iter()
+        .map(|l| LibraryRow {
+            name: l.name.clone().into(),
+            path: l.path.clone().into(),
+            enabled: l.enabled,
+            removable: !l.managed_by_git,
+            available: library_available(&l.path),
+        })
+        .collect();
+    if !cfg.libraries.iter().any(|l| l.managed_by_git) {
+        if let Some(dir) = hymnal_core::library::default_library_dir() {
+            let path = dir
+                .join(hymnal_core::library::DEFAULT_REPO_HYMNS_SUBDIR)
+                .to_string_lossy()
+                .to_string();
+            let available = hymnal_core::library::library_available(&path);
+            rows.insert(
+                0,
+                LibraryRow {
+                    name: "Imnuri Creștine".into(),
+                    path: path.into(),
+                    enabled: true,
+                    removable: false,
+                    available,
+                },
+            );
+        }
+    }
+    rows
+}
+
 /// Update the preview to show slide `idx` of `slides` for a hymn titled
 /// `title` (numbered `number`). Clamps `idx` into range; sets slide text,
 /// count, index, and the bottom status bar string.
@@ -137,6 +175,12 @@ fn main() -> anyhow::Result<()> {
     ui.set_update_status(strings.borrow().update_checking.clone().into());
     ui.set_sync_status("".into());
 
+    // Populate the Settings tab's library list from the (possibly default) config.
+    ui.set_libraries(ModelRc::from(Rc::new(VecModel::from(library_rows(
+        &dl_cfg.borrow(),
+    )))));
+    ui.set_library_status("".into());
+
     // Channel carrying download events from the worker thread to the UI thread.
     let (dl_tx, dl_rx) = mpsc::channel::<DownloadEvent>();
 
@@ -148,6 +192,9 @@ fn main() -> anyhow::Result<()> {
 
     // Force-sync delivers a freshly rebuilt index (or an error message).
     let (fs_tx, fs_rx) = mpsc::channel::<Result<Vec<HymnEntry>, String>>();
+
+    // Local re-index results after add/remove/toggle of a library folder.
+    let (lib_tx, lib_rx) = mpsc::channel::<Result<Vec<HymnEntry>, String>>();
 
     // ---- Worker thread: index-first (no network), then sync in background ----
     // Snapshot translated status strings to move into the worker (it can't touch
@@ -295,6 +342,21 @@ fn main() -> anyhow::Result<()> {
                         }
                     }
                     ui.set_syncing(false);
+                }
+            }
+            if let Ok(result) = lib_rx.try_recv() {
+                if let Some(ui) = weak2.upgrade() {
+                    match result {
+                        Ok(entries) => {
+                            let n = entries.len();
+                            *searcher_for_timer.borrow_mut() = Some(Searcher::new(entries));
+                            ui.set_library_status(format!("Indexed {n} hymns.").into());
+                            ui.invoke_query_changed("".into());
+                        }
+                        Err(e) => {
+                            ui.set_library_status(format!("Indexing failed: {e}").into());
+                        }
+                    }
                 }
             }
         },
@@ -553,6 +615,87 @@ fn main() -> anyhow::Result<()> {
                 warn!("failed to reveal {dir}: {e}");
             }
         }
+    });
+
+    // ---- Library folder management (Settings tab) ----
+    let reindex = {
+        let lib_tx = lib_tx.clone();
+        move |cfg: Config| {
+            let lib_tx = lib_tx.clone();
+            std::thread::spawn(move || {
+                let entries = hymnal_core::refresh::load_local(cfg);
+                let _ = lib_tx.send(Ok(entries));
+            });
+        }
+    };
+
+    let weak_addlib = ui.as_weak();
+    let cfg_addlib = dl_cfg.clone();
+    let cfg_path_addlib = cfg_path.clone();
+    let reindex_add = reindex.clone();
+    ui.on_add_library(move || {
+        let Some(ui) = weak_addlib.upgrade() else {
+            return;
+        };
+        let Some(folder) = rfd::FileDialog::new().pick_folder() else {
+            return;
+        };
+        let mut cfg = cfg_addlib.borrow_mut();
+        match hymnal_core::library::add_user_library(&mut cfg, &folder) {
+            Ok(()) => {
+                if let Some(p) = &cfg_path_addlib {
+                    if let Err(e) = cfg.save(p) {
+                        warn!("config save failed: {e}");
+                    }
+                }
+                ui.set_libraries(ModelRc::from(Rc::new(VecModel::from(library_rows(&cfg)))));
+                ui.set_library_status("Indexing…".into());
+                reindex_add(cfg.clone());
+            }
+            Err(e) => {
+                ui.set_library_status(format!("{e}").into());
+            }
+        }
+    });
+
+    let weak_rmlib = ui.as_weak();
+    let cfg_rmlib = dl_cfg.clone();
+    let cfg_path_rmlib = cfg_path.clone();
+    let reindex_rm = reindex.clone();
+    ui.on_remove_library(move |path| {
+        let Some(ui) = weak_rmlib.upgrade() else {
+            return;
+        };
+        let mut cfg = cfg_rmlib.borrow_mut();
+        hymnal_core::library::remove_user_library(&mut cfg, &path);
+        if let Some(p) = &cfg_path_rmlib {
+            if let Err(e) = cfg.save(p) {
+                warn!("config save failed: {e}");
+            }
+        }
+        ui.set_libraries(ModelRc::from(Rc::new(VecModel::from(library_rows(&cfg)))));
+        ui.set_library_status("Indexing…".into());
+        reindex_rm(cfg.clone());
+    });
+
+    let weak_togglib = ui.as_weak();
+    let cfg_togglib = dl_cfg.clone();
+    let cfg_path_togglib = cfg_path.clone();
+    let reindex_tog = reindex.clone();
+    ui.on_set_library_enabled(move |path, enabled| {
+        let Some(ui) = weak_togglib.upgrade() else {
+            return;
+        };
+        let mut cfg = cfg_togglib.borrow_mut();
+        hymnal_core::library::set_library_enabled(&mut cfg, &path, enabled);
+        if let Some(p) = &cfg_path_togglib {
+            if let Err(e) = cfg.save(p) {
+                warn!("config save failed: {e}");
+            }
+        }
+        ui.set_libraries(ModelRc::from(Rc::new(VecModel::from(library_rows(&cfg)))));
+        ui.set_library_status("Indexing…".into());
+        reindex_tog(cfg.clone());
     });
 
     // Keep the timer alive for the lifetime of the application; dropping it
