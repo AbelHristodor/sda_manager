@@ -5,6 +5,8 @@
 
 slint::include_modules!();
 
+mod projector;
+
 use hymnal_core::downloader::{self, DownloadEvent};
 use hymnal_core::i18n::{Language, Strings};
 use hymnal_core::library::{downloads_dir, Config};

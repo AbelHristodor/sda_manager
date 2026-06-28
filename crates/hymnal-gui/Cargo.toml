@@ -10,6 +10,7 @@ path = "src/main.rs"
 [dependencies]
 hymnal-core = { path = "../hymnal-core" }
 slint = "1.8"
+display-info = "0.5"
 open = "5"
 rfd = "0.14"
 sys-locale = "0.3"
