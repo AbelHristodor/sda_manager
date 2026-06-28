@@ -78,6 +78,8 @@ modification time changed.
 - **Preview:** the highlighted result's verses show in the right pane.
 - **Open in PowerPoint:** launches the `.pptx` in the OS default handler.
 - **Reveal in folder:** opens the containing folder.
+- **Languages:** the app UI is available in English, Italian, and Romanian,
+  selectable in the Settings tab (auto-detected from your OS on first run).
 
 Set `RUST_LOG=hymnal_gui=debug,hymnal_core=debug` to see indexing, sync, and
 query activity logged to the console.

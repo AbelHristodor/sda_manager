@@ -122,6 +122,13 @@ The pattern, all driven from `main.rs`:
 - **git sync** (`sync.rs`) is intentionally minimal: clone-if-absent, else
   fast-forward only (hardcoded `refs/heads/main`). No merge/rebase. Returns a
   `SyncOutcome` so callers can skip re-indexing when nothing changed.
+- **Translations** (`i18n.rs`): `Language` (En/It/Ro) selects a `Strings` struct
+  (one field per UI string). `main.rs::apply_language` maps it onto the Slint
+  `export global I18n` and reuses it for dynamic status messages. The choice
+  persists in `Config.language`; first run detects the OS locale (`sys-locale`),
+  falling back to English. Adding a UI string is a compile error until all three
+  languages supply it (`Strings` has named fields). Switching is live (no
+  restart); the picker lives in the Settings tab.
 - **Tool binaries** (`downloader.rs`): `yt-dlp`/`ffmpeg` are located on `PATH` or
   in the app's data `tools/` dir, else downloaded from upstream releases on
   demand. Downloaded binaries are `chmod +x`'d and de-quarantined on macOS.
