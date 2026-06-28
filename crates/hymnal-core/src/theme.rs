@@ -17,6 +17,24 @@ impl Rgba {
     pub const fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
         Rgba { r, g, b, a }
     }
+
+    /// Format as `#RRGGBB` (uppercase, alpha dropped — the editor only edits RGB).
+    pub fn to_hex(&self) -> String {
+        format!("#{:02X}{:02X}{:02X}", self.r, self.g, self.b)
+    }
+
+    /// Parse `#RRGGBB` / `RRGGBB` (case-insensitive). Alpha is set to 255.
+    /// Returns `None` for any non-6-hex-digit input.
+    pub fn from_hex(s: &str) -> Option<Rgba> {
+        let h = s.strip_prefix('#').unwrap_or(s);
+        if h.len() != 6 || !h.chars().all(|c| c.is_ascii_hexdigit()) {
+            return None;
+        }
+        let r = u8::from_str_radix(&h[0..2], 16).ok()?;
+        let g = u8::from_str_radix(&h[2..4], 16).ok()?;
+        let b = u8::from_str_radix(&h[4..6], 16).ok()?;
+        Some(Rgba::new(r, g, b, 255))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
