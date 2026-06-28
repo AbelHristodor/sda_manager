@@ -88,6 +88,89 @@ global Theme {
     out property <length> gap: 12px;
 }
 
+component PrimaryButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback clicked();
+    height: 32px;
+    min-width: 80px;
+    border-radius: 7px;
+    background: ta.pressed ? Theme.accent.darker(20%) : Theme.accent;
+    opacity: root.enabled ? 1.0 : 0.5;
+    HorizontalBox {
+        padding-left: 14px; padding-right: 14px; alignment: center;
+        Text { text: root.text; color: white; font-size: 13px; font-weight: 600; vertical-alignment: center; }
+    }
+    ta := TouchArea { enabled: root.enabled; clicked => { root.clicked(); } }
+}
+
+component SecondaryButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <bool> danger: false;
+    callback clicked();
+    height: 32px;
+    min-width: 72px;
+    border-radius: 7px;
+    border-width: 1px;
+    border-color: Theme.field-border;
+    background: ta.pressed ? Theme.field.darker(15%) : Theme.field;
+    opacity: root.enabled ? 1.0 : 0.5;
+    HorizontalBox {
+        padding-left: 12px; padding-right: 12px; alignment: center;
+        Text { text: root.text; color: root.danger ? Theme.danger : Theme.text; font-size: 13px; vertical-alignment: center; }
+    }
+    ta := TouchArea { enabled: root.enabled; clicked => { root.clicked(); } }
+}
+
+component ColorField inherits VerticalBox {
+    in-out property <color> value;
+    in-out property <string> hex;
+    callback hex-edited(string);
+    callback preset-picked(color);
+    spacing: 6px;
+    HorizontalBox {
+        spacing: 8px;
+        Rectangle { width: 28px; height: 22px; border-radius: 5px; background: root.value;
+            border-width: 1px; border-color: Theme.field-border; }
+        hexedit := LineEdit { text: root.hex; edited(t) => { root.hex-edited(t); } }
+    }
+    HorizontalBox {
+        spacing: 5px; alignment: start;
+        for c in [#ffffff, #000000, #0b1f3a, #f8fafc, #fde68a, #3b0d0d, #1e3a2f]: Rectangle {
+            width: 20px; height: 20px; border-radius: 4px; background: c;
+            border-width: 1px; border-color: Theme.field-border;
+            TouchArea { clicked => { root.preset-picked(c); } }
+        }
+    }
+}
+
+component ThemeThumb inherits Rectangle {
+    in property <string> name;
+    in property <color> bg;
+    in property <color> fg;
+    in property <string> font-family;
+    in property <bool> selected;
+    in property <bool> active;
+    callback clicked();
+    height: 64px;
+    border-radius: 7px;
+    border-width: root.selected ? 2px : 1px;
+    border-color: root.selected ? Theme.accent-soft : Theme.panel-border;
+    clip: true;
+    Rectangle {
+        background: root.bg;
+        Text { text: "Aa " + root.name; color: root.fg; font-family: root.font-family;
+            font-size: 12px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+        if root.active: Rectangle {
+            x: 4px; y: 4px; width: 52px; height: 16px; border-radius: 8px; background: #0008;
+            Text { text: "● Active"; color: Theme.accent-soft; font-size: 9px;
+                horizontal-alignment: center; vertical-alignment: center; }
+        }
+    }
+    TouchArea { clicked => { root.clicked(); } }
+}
+
 component NavItem inherits Rectangle {
     in property <string> label;
     in property <image> icon;
