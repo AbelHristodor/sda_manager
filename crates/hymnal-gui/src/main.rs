@@ -68,34 +68,19 @@ fn row_label(entry: &HymnEntry) -> String {
 /// disk (mirrors refresh::register_default_library's "add if no managed entry").
 fn library_rows(cfg: &Config) -> Vec<LibraryRow> {
     use hymnal_core::library::library_available;
-    let mut rows: Vec<LibraryRow> = cfg
-        .libraries
-        .iter()
-        .map(|l| LibraryRow {
-            name: l.name.clone().into(),
-            path: l.path.clone().into(),
-            enabled: l.enabled,
-            removable: !l.managed_by_git,
-            available: library_available(&l.path),
-        })
-        .collect();
+    let row_of = |l: &hymnal_core::library::Library| LibraryRow {
+        name: l.name.clone().into(),
+        path: l.path.clone().into(),
+        enabled: l.enabled,
+        removable: !l.managed_by_git,
+        available: library_available(&l.path),
+    };
+    let mut rows: Vec<LibraryRow> = cfg.libraries.iter().map(row_of).collect();
+    // Show the built-in library even before it's persisted to config, using the
+    // same source of truth the indexer registers, so the row can't drift.
     if !cfg.libraries.iter().any(|l| l.managed_by_git) {
-        if let Some(dir) = hymnal_core::library::default_library_dir() {
-            let path = dir
-                .join(hymnal_core::library::DEFAULT_REPO_HYMNS_SUBDIR)
-                .to_string_lossy()
-                .to_string();
-            let available = hymnal_core::library::library_available(&path);
-            rows.insert(
-                0,
-                LibraryRow {
-                    name: "Imnuri Creștine".into(),
-                    path: path.into(),
-                    enabled: true,
-                    removable: false,
-                    available,
-                },
-            );
+        if let Some(default) = hymnal_core::library::default_library() {
+            rows.insert(0, row_of(&default));
         }
     }
     rows

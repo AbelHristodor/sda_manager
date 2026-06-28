@@ -4,7 +4,7 @@
 
 use crate::index::{load_cache, refresh_index, save_cache};
 use crate::library::{
-    default_library_dir, index_cache_path, Config, Library, DEFAULT_REPO_HYMNS_SUBDIR,
+    default_library_dir, index_cache_path, Config,
 };
 use crate::model::HymnEntry;
 use crate::sync::{sync_default_library, SyncOutcome};
@@ -42,19 +42,13 @@ pub fn force_clean(_cfg: &Config) -> anyhow::Result<()> {
 /// the network). Adds the entry if no git-managed library is present yet.
 /// Returns false if the default library dir can't be determined.
 fn register_default_library(cfg: &mut Config) -> bool {
-    let Some(dir) = default_library_dir() else {
+    let Some(default) = crate::library::default_library() else {
         warn!("could not determine default library dir");
         return false;
     };
     if !cfg.libraries.iter().any(|l| l.managed_by_git) {
-        let hymns = dir.join(DEFAULT_REPO_HYMNS_SUBDIR);
-        debug!("registering default library at {}", hymns.display());
-        cfg.libraries.push(Library {
-            name: "Imnuri Creștine".into(),
-            path: hymns.to_string_lossy().to_string(),
-            enabled: true,
-            managed_by_git: true,
-        });
+        debug!("registering default library at {}", default.path);
+        cfg.libraries.push(default);
     }
     true
 }

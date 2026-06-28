@@ -9,6 +9,9 @@ pub const DEFAULT_REPO_URL: &str =
 /// than at the clone root (which would double-index the test fixtures).
 pub const DEFAULT_REPO_HYMNS_SUBDIR: &str = "assets/920";
 
+/// Display name of the built-in (git-managed) library.
+pub const DEFAULT_LIBRARY_NAME: &str = "Imnuri Creștine";
+
 /// One library = a folder of .pptx files.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Library {
@@ -83,6 +86,21 @@ pub fn config_path() -> Option<std::path::PathBuf> {
 pub fn default_library_dir() -> Option<std::path::PathBuf> {
     directories::ProjectDirs::from("org", "hymnal", "HymnFinder")
         .map(|d| d.data_dir().join("default-library"))
+}
+
+/// The built-in git-managed library entry (name + hymns-subdir path), or `None`
+/// if the data directory can't be determined. Single source of truth shared by
+/// the indexer's registration and the Settings UI so they can't drift.
+pub fn default_library() -> Option<Library> {
+    default_library_dir().map(|dir| Library {
+        name: DEFAULT_LIBRARY_NAME.to_string(),
+        path: dir
+            .join(DEFAULT_REPO_HYMNS_SUBDIR)
+            .to_string_lossy()
+            .to_string(),
+        enabled: true,
+        managed_by_git: true,
+    })
 }
 
 /// Path for the serialized index cache.
