@@ -7,7 +7,7 @@ use crate::library::{
     default_library_dir, index_cache_path, Config, Library, DEFAULT_REPO_HYMNS_SUBDIR,
 };
 use crate::model::HymnEntry;
-use crate::sync::sync_default_library;
+use crate::sync::{sync_default_library, SyncOutcome};
 use log::{debug, info, warn};
 use std::path::Path;
 
@@ -38,24 +38,14 @@ pub fn force_clean(_cfg: &Config) -> anyhow::Result<()> {
     force_clean_paths(default_library_dir().as_deref(), index_cache_path().as_deref())
 }
 
-/// Ensure the default library is registered in `cfg` (clones/pulls it and adds
-/// a git-managed Library entry if none exists). Mutates `cfg` in place.
-fn ensure_default_library(cfg: &mut Config) {
+/// Register the default git-managed library in `cfg` (path only; does NOT touch
+/// the network). Adds the entry if no git-managed library is present yet.
+/// Returns false if the default library dir can't be determined.
+fn register_default_library(cfg: &mut Config) -> bool {
     let Some(dir) = default_library_dir() else {
         warn!("could not determine default library dir");
-        return;
+        return false;
     };
-    let fresh = !dir.join(".git").is_dir();
-    info!(
-        "{} default library from {} -> {}",
-        if fresh { "cloning" } else { "updating" },
-        cfg.default_repo_url,
-        dir.display()
-    );
-    match sync_default_library(&cfg.default_repo_url, &dir) {
-        Ok(()) => info!("clone/sync ok"),
-        Err(e) => warn!("clone/sync failed: {e}"),
-    }
     if !cfg.libraries.iter().any(|l| l.managed_by_git) {
         let hymns = dir.join(DEFAULT_REPO_HYMNS_SUBDIR);
         debug!("registering default library at {}", hymns.display());
@@ -66,13 +56,62 @@ fn ensure_default_library(cfg: &mut Config) {
             managed_by_git: true,
         });
     }
+    true
+}
+
+/// Clone the default library if it's missing, otherwise fast-forward pull.
+/// Returns the sync outcome (Cloned/Updated/Unchanged), or None on error/no dir.
+/// This is the network step — call it off the UI thread.
+pub fn sync_default(cfg: &Config) -> Option<SyncOutcome> {
+    let dir = default_library_dir()?;
+    let fresh = !dir.join(".git").is_dir();
+    info!(
+        "{} default library from {} -> {}",
+        if fresh { "cloning" } else { "updating" },
+        cfg.default_repo_url,
+        dir.display()
+    );
+    match sync_default_library(&cfg.default_repo_url, &dir) {
+        Ok(outcome) => {
+            info!("sync ok: {outcome:?}");
+            Some(outcome)
+        }
+        Err(e) => {
+            warn!("clone/sync failed: {e}");
+            None
+        }
+    }
+}
+
+/// Index from whatever is already on disk — NO network. Use on boot for an
+/// instant time-to-searchable; a background [`sync_default`] + re-index can
+/// follow if it reports changes. If the default library has never been cloned
+/// (first run), this returns whatever other libraries yield (often empty),
+/// and the caller should fall back to [`load_library`].
+pub fn load_local(mut cfg: Config) -> Vec<HymnEntry> {
+    register_default_library(&mut cfg);
+    index_enabled(&cfg, false)
+}
+
+/// True if the default git-managed library has been cloned at least once.
+pub fn default_library_present() -> bool {
+    default_library_dir()
+        .map(|d| d.join(".git").is_dir())
+        .unwrap_or(false)
 }
 
 /// Load (and cache) the hymn index for all enabled libraries in `cfg`. When
 /// `force` is true the on-disk cache is ignored, forcing a full re-parse.
+/// This performs the network sync first (clone/pull) — use for first run and
+/// force-sync, not the fast boot path.
 pub fn load_library(mut cfg: Config, force: bool) -> Vec<HymnEntry> {
-    ensure_default_library(&mut cfg);
+    let _ = sync_default(&cfg);
+    register_default_library(&mut cfg);
+    index_enabled(&cfg, force)
+}
 
+/// Index every enabled library in `cfg`, using the on-disk cache unless `force`.
+fn index_enabled(cfg: &Config, force: bool) -> Vec<HymnEntry> {
     let cache = index_cache_path();
     let cached = if force {
         Vec::new()

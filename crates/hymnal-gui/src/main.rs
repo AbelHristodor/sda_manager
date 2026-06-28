@@ -91,7 +91,7 @@ fn main() -> anyhow::Result<()> {
     // Force-sync delivers a freshly rebuilt index (or an error message).
     let (fs_tx, fs_rx) = mpsc::channel::<Result<Vec<HymnEntry>, String>>();
 
-    // ---- Worker thread: config -> sync -> index -> send entries to UI ----
+    // ---- Worker thread: index-first (no network), then sync in background ----
     let weak = ui.as_weak();
     std::thread::spawn(move || {
         let cfg = match hymnal_core::library::config_path() {
@@ -101,14 +101,31 @@ fn main() -> anyhow::Result<()> {
             }),
             None => Config::default(),
         };
-        let entries = hymnal_core::refresh::load_library(cfg, false);
-        if tx.send(entries).is_err() {
-            warn!("UI gone before index delivered");
+
+        // 1) Make search ready ASAP from local clone + cache — no network.
+        //    First run (never cloned) has nothing local, so fall back to the
+        //    full clone-then-index path.
+        if hymnal_core::refresh::default_library_present() {
+            let local = hymnal_core::refresh::load_local(cfg.clone());
+            let _ = tx.send(local);
+            let _ = weak.upgrade_in_event_loop(|ui| ui.set_status("Library ready.".into()));
+
+            // 2) Pull updates in the background; only re-index if it changed.
+            use hymnal_core::sync::SyncOutcome;
+            if matches!(
+                hymnal_core::refresh::sync_default(&cfg),
+                Some(SyncOutcome::Updated | SyncOutcome::Cloned)
+            ) {
+                info!("library updated by background pull; re-indexing");
+                let refreshed = hymnal_core::refresh::load_local(cfg);
+                let _ = tx.send(refreshed);
+            }
+        } else {
+            // First run: must clone before there's anything to show.
+            let entries = hymnal_core::refresh::load_library(cfg, false);
+            let _ = tx.send(entries);
+            let _ = weak.upgrade_in_event_loop(|ui| ui.set_status("Library ready.".into()));
         }
-        let weak_ready = weak.clone();
-        let _ = weak_ready.upgrade_in_event_loop(|ui| {
-            ui.set_status("Library ready.".into());
-        });
 
         // Background binary self-update check (errors logged, never block boot).
         match hymnal_core::update::check_and_stage_update() {
