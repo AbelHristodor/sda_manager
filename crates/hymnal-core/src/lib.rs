@@ -8,3 +8,4 @@ pub mod sync;
 pub mod downloader;
 pub mod refresh;
 pub mod update;
+pub mod i18n;
