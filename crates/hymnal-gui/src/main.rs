@@ -6,6 +6,7 @@
 slint::include_modules!();
 
 use hymnal_core::downloader::{self, DownloadEvent};
+use hymnal_core::i18n::{Language, Strings};
 use hymnal_core::library::{downloads_dir, Config};
 use hymnal_core::model::HymnEntry;
 use hymnal_core::search::Searcher;
@@ -13,6 +14,44 @@ use log::{debug, info, warn};
 use slint::{ModelRc, SharedString, StandardListViewItem, VecModel};
 use std::rc::Rc;
 use std::sync::mpsc;
+
+/// Fill three `{}` placeholders in `fmt`, in order, with `a`, `b`, `c`.
+fn fill3(fmt: &str, a: &str, b: &str, c: &str) -> String {
+    fmt.replacen("{}", a, 1)
+        .replacen("{}", b, 1)
+        .replacen("{}", c, 1)
+}
+
+/// Fill the Slint `I18n` global from `Strings::for_language(lang)`. Returns the
+/// built `Strings` so callers can reuse it for dynamic status messages.
+fn apply_language(ui: &AppWindow, lang: Language) -> Strings {
+    let s = Strings::for_language(lang);
+    let g = ui.global::<I18n>();
+    g.set_app_title(s.app_title.clone().into());
+    g.set_nav_library(s.nav_library.clone().into());
+    g.set_nav_downloader(s.nav_downloader.clone().into());
+    g.set_nav_settings(s.nav_settings.clone().into());
+    g.set_search_placeholder(s.search_placeholder.clone().into());
+    g.set_prev_slide(s.prev_slide.clone().into());
+    g.set_next_slide(s.next_slide.clone().into());
+    g.set_open_in_powerpoint(s.open_in_powerpoint.clone().into());
+    g.set_reveal_in_folder(s.reveal_in_folder.clone().into());
+    g.set_downloader_heading(s.downloader_heading.clone().into());
+    g.set_downloader_subtitle(s.downloader_subtitle.clone().into());
+    g.set_downloader_url_placeholder(s.downloader_url_placeholder.clone().into());
+    g.set_choose(s.choose.clone().into());
+    g.set_setting_up_downloader(s.setting_up_downloader.clone().into());
+    g.set_download_complete(s.download_complete.clone().into());
+    g.set_download_failed_prefix(s.download_failed_prefix.clone().into());
+    g.set_settings_heading(s.settings_heading.clone().into());
+    g.set_version_prefix(s.version_prefix.clone().into());
+    g.set_library_heading(s.library_heading.clone().into());
+    g.set_force_sync_description(s.force_sync_description.clone().into());
+    g.set_force_sync_button(s.force_sync_button.clone().into());
+    g.set_syncing_button(s.syncing_button.clone().into());
+    g.set_language_heading(s.language_heading.clone().into());
+    s
+}
 
 /// Format one hymn as a single finder row: "150  Cerul, pământul  · Imnuri".
 fn row_label(entry: &HymnEntry) -> String {
@@ -29,6 +68,7 @@ fn row_label(entry: &HymnEntry) -> String {
 /// count, index, and the bottom status bar string.
 fn show_slide(
     ui: &AppWindow,
+    strings: &Strings,
     number: Option<&str>,
     title: &str,
     slides: &[String],
@@ -39,18 +79,22 @@ fn show_slide(
         ui.set_slide_text("".into());
         ui.set_slide_count(0);
         ui.set_slide_index(0);
-        ui.set_preview_status(SharedString::from(format!("{title} — 0 slides")));
+        ui.set_preview_status(SharedString::from(
+            strings.slide_zero_fmt.replace("{}", title),
+        ));
         return;
     }
     let idx = idx.clamp(0, count - 1);
     let number_prefix = number.map(|n| format!("{n}. ")).unwrap_or_default();
+    let titled = format!("{number_prefix}{title}");
     ui.set_slide_text(SharedString::from(slides[idx as usize].clone()));
     ui.set_slide_count(count);
     ui.set_slide_index(idx);
-    ui.set_preview_status(SharedString::from(format!(
-        "{number_prefix}{title} — slide {}/{}",
-        idx + 1,
-        count
+    ui.set_preview_status(SharedString::from(fill3(
+        &strings.slide_counter_fmt,
+        &titled,
+        &(idx + 1).to_string(),
+        &count.to_string(),
     )));
 }
 
@@ -75,8 +119,22 @@ fn main() -> anyhow::Result<()> {
     let initial_dir = downloads_dir(&dl_cfg.borrow());
     ui.set_download_dir(initial_dir.to_string_lossy().to_string().into());
 
+    // Resolve language: saved choice, else OS locale, else English.
+    let boot_lang = dl_cfg
+        .borrow()
+        .language
+        .as_deref()
+        .map(Language::from_code)
+        .unwrap_or_else(|| {
+            sys_locale::get_locale()
+                .map(|l| Language::from_locale(&l))
+                .unwrap_or(Language::En)
+        });
+    let strings = Rc::new(std::cell::RefCell::new(apply_language(&ui, boot_lang)));
+    ui.set_active_language(boot_lang.code().into());
+
     ui.set_app_version(env!("CARGO_PKG_VERSION").into());
-    ui.set_update_status("Checking for updates…".into());
+    ui.set_update_status(strings.borrow().update_checking.clone().into());
     ui.set_sync_status("".into());
 
     // Channel carrying download events from the worker thread to the UI thread.
@@ -92,6 +150,12 @@ fn main() -> anyhow::Result<()> {
     let (fs_tx, fs_rx) = mpsc::channel::<Result<Vec<HymnEntry>, String>>();
 
     // ---- Worker thread: index-first (no network), then sync in background ----
+    // Snapshot translated status strings to move into the worker (it can't touch
+    // the UI-thread `strings` Rc).
+    let s_ready = strings.borrow().status_library_ready.clone();
+    let s_uptodate = strings.borrow().update_up_to_date.clone();
+    let s_updatefail = strings.borrow().update_failed.clone();
+    let s_staged = strings.borrow().update_staged_fmt.clone();
     let weak = ui.as_weak();
     std::thread::spawn(move || {
         let cfg = match hymnal_core::library::config_path() {
@@ -108,7 +172,8 @@ fn main() -> anyhow::Result<()> {
         if hymnal_core::refresh::default_library_present() {
             let local = hymnal_core::refresh::load_local(cfg.clone());
             let _ = tx.send(local);
-            let _ = weak.upgrade_in_event_loop(|ui| ui.set_status("Library ready.".into()));
+            let s_ready1 = s_ready.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| ui.set_status(s_ready1.into()));
 
             // 2) Pull updates in the background; only re-index if it changed.
             use hymnal_core::sync::SyncOutcome;
@@ -124,22 +189,24 @@ fn main() -> anyhow::Result<()> {
             // First run: must clone before there's anything to show.
             let entries = hymnal_core::refresh::load_library(cfg, false);
             let _ = tx.send(entries);
-            let _ = weak.upgrade_in_event_loop(|ui| ui.set_status("Library ready.".into()));
+            let s_ready2 = s_ready.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| ui.set_status(s_ready2.into()));
         }
 
         // Background binary self-update check (errors logged, never block boot).
         match hymnal_core::update::check_and_stage_update() {
             Ok(hymnal_core::update::UpdateOutcome::UpToDate) => {
-                let _ = weak.upgrade_in_event_loop(|ui| ui.set_update_status("Up to date.".into()));
+                let _ = weak.upgrade_in_event_loop(move |ui| ui.set_update_status(s_uptodate.into()));
             }
             Ok(hymnal_core::update::UpdateOutcome::Updated { version }) => {
+                let msg = s_staged.replace("{}", &version);
                 let _ = weak.upgrade_in_event_loop(move |ui| {
-                    ui.set_update_status(format!("Update {version} staged — restart to apply.").into());
+                    ui.set_update_status(msg.into());
                 });
             }
             Err(e) => {
                 warn!("update check failed: {e}");
-                let _ = weak.upgrade_in_event_loop(|ui| ui.set_update_status("Update check failed.".into()));
+                let _ = weak.upgrade_in_event_loop(move |ui| ui.set_update_status(s_updatefail.into()));
             }
         }
     });
@@ -152,12 +219,13 @@ fn main() -> anyhow::Result<()> {
     let row_to_entry: Rc<std::cell::RefCell<Vec<usize>>> =
         Rc::new(std::cell::RefCell::new(Vec::new()));
 
-    ui.set_status("Loading hymn library…".into());
+    ui.set_status(strings.borrow().status_loading.clone().into());
 
     // Poll the channel; install the searcher and run an initial search.
     let weak2 = ui.as_weak();
     let searcher_for_timer = searcher.clone();
     let dl_in_flight_timer = dl_in_flight.clone();
+    let strings_timer = strings.clone();
     let timer = slint::Timer::default();
     timer.start(
         slint::TimerMode::Repeated,
@@ -167,7 +235,7 @@ fn main() -> anyhow::Result<()> {
                 info!("searcher ready with {} hymns", entries.len());
                 *searcher_for_timer.borrow_mut() = Some(Searcher::new(entries));
                 if let Some(ui) = weak2.upgrade() {
-                    ui.set_status("Library ready.".into());
+                    ui.set_status(strings_timer.borrow().status_library_ready.clone().into());
                     ui.invoke_query_changed("".into());
                 }
             }
@@ -207,11 +275,23 @@ fn main() -> anyhow::Result<()> {
                         Ok(entries) => {
                             let n = entries.len();
                             *searcher_for_timer.borrow_mut() = Some(Searcher::new(entries));
-                            ui.set_sync_status(format!("Synced — indexed {n} hymns.").into());
+                            ui.set_sync_status(
+                                strings_timer
+                                    .borrow()
+                                    .status_synced_fmt
+                                    .replace("{}", &n.to_string())
+                                    .into(),
+                            );
                             ui.invoke_query_changed("".into());
                         }
                         Err(e) => {
-                            ui.set_sync_status(format!("Sync failed: {e}").into());
+                            ui.set_sync_status(
+                                strings_timer
+                                    .borrow()
+                                    .status_sync_failed_fmt
+                                    .replace("{}", &e)
+                                    .into(),
+                            );
                         }
                     }
                     ui.set_syncing(false);
@@ -257,6 +337,7 @@ fn main() -> anyhow::Result<()> {
     // ---- Highlight changed (keyboard arrows or click) -> show slide 0 ----
     let searcher_for_sel = searcher.clone();
     let rows_for_sel = row_to_entry.clone();
+    let strings_sel = strings.clone();
     let weak6 = ui.as_weak();
     ui.on_current_changed(move |idx| {
         let Some(ui) = weak6.upgrade() else { return };
@@ -274,13 +355,14 @@ fn main() -> anyhow::Result<()> {
             .and_then(|&ei| s.entry(ei));
         if let Some(entry) = entry {
             debug!("preview #{:?} {} ({} slides)", entry.number, entry.title, entry.slides.len());
-            show_slide(&ui, entry.number.as_deref(), &entry.title, &entry.slides, 0);
+            show_slide(&ui, &strings_sel.borrow(), entry.number.as_deref(), &entry.title, &entry.slides, 0);
         }
     });
 
     // ---- Slide navigation: step within the highlighted hymn's slides ----
     let searcher_for_prev = searcher.clone();
     let rows_for_prev = row_to_entry.clone();
+    let strings_prev = strings.clone();
     let weak_prev = ui.as_weak();
     ui.on_prev_slide(move || {
         let Some(ui) = weak_prev.upgrade() else { return };
@@ -292,12 +374,13 @@ fn main() -> anyhow::Result<()> {
         let Some(s) = guard.as_ref() else { return };
         let entry = rows_for_prev.borrow().get(row as usize).and_then(|&ei| s.entry(ei));
         if let Some(entry) = entry {
-            show_slide(&ui, entry.number.as_deref(), &entry.title, &entry.slides, ui.get_slide_index() - 1);
+            show_slide(&ui, &strings_prev.borrow(), entry.number.as_deref(), &entry.title, &entry.slides, ui.get_slide_index() - 1);
         }
     });
 
     let searcher_for_next = searcher.clone();
     let rows_for_next = row_to_entry.clone();
+    let strings_next = strings.clone();
     let weak_next = ui.as_weak();
     ui.on_next_slide(move || {
         let Some(ui) = weak_next.upgrade() else { return };
@@ -309,7 +392,7 @@ fn main() -> anyhow::Result<()> {
         let Some(s) = guard.as_ref() else { return };
         let entry = rows_for_next.borrow().get(row as usize).and_then(|&ei| s.entry(ei));
         if let Some(entry) = entry {
-            show_slide(&ui, entry.number.as_deref(), &entry.title, &entry.slides, ui.get_slide_index() + 1);
+            show_slide(&ui, &strings_next.borrow(), entry.number.as_deref(), &entry.title, &entry.slides, ui.get_slide_index() + 1);
         }
     });
 
@@ -341,13 +424,14 @@ fn main() -> anyhow::Result<()> {
 
     // ---- Force sync: wipe clone+cache, re-clone, reindex (off the UI thread) ----
     let weak_fs = ui.as_weak();
+    let strings_fs = strings.clone();
     ui.on_force_sync(move || {
         let Some(ui) = weak_fs.upgrade() else { return };
         if ui.get_syncing() {
             return; // already running
         }
         ui.set_syncing(true);
-        ui.set_sync_status("Re-cloning and reindexing…".into());
+        ui.set_sync_status(strings_fs.borrow().status_re_cloning.clone().into());
         let fs_tx = fs_tx.clone();
         std::thread::spawn(move || {
             let cfg = match hymnal_core::library::config_path() {
@@ -383,6 +467,25 @@ fn main() -> anyhow::Result<()> {
             info!("revealing {}", parent.display());
             if let Err(e) = open::that(parent) {
                 warn!("failed to reveal {}: {e}", parent.display());
+            }
+        }
+    });
+
+    // ---- Switch UI language: re-fill I18n, persist the choice ----
+    let weak_lang = ui.as_weak();
+    let strings_lang = strings.clone();
+    let cfg_lang = dl_cfg.clone();
+    let cfg_path_lang = cfg_path.clone();
+    ui.on_set_language(move |code| {
+        let Some(ui) = weak_lang.upgrade() else { return };
+        let lang = Language::from_code(&code);
+        *strings_lang.borrow_mut() = apply_language(&ui, lang);
+        ui.set_active_language(lang.code().into());
+        // Persist; log on failure (matches force-sync/choose-folder handling).
+        cfg_lang.borrow_mut().language = Some(lang.code().to_string());
+        if let Some(p) = cfg_path_lang.as_ref() {
+            if let Err(e) = cfg_lang.borrow().save(p) {
+                warn!("failed to save language: {e}");
             }
         }
     });
