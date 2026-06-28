@@ -472,6 +472,13 @@ export component AppWindow inherits Window {
     icon: @image-url("../../../assets/icon.png");
     preferred-width: 980px;
     preferred-height: 620px;
+    // Pin min == max == preferred so the window is a fixed size: switching to a
+    // tab whose content prefers a smaller size (e.g. Settings) can no longer
+    // shrink the window, and the dimensions stay constant.
+    min-width: 980px;
+    min-height: 620px;
+    max-width: 980px;
+    max-height: 620px;
     background: Theme.bg;
 
     in-out property <int> active-tab: 0;
