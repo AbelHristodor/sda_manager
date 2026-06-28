@@ -120,6 +120,57 @@ pub fn set_library_enabled(cfg: &mut Config, path: &str, enabled: bool) {
     }
 }
 
+/// Canonicalize `path` to an absolute, symlink-resolved form for stable
+/// comparison; falls back to the input as-is if canonicalization fails (e.g.
+/// the folder is on an unmounted drive).
+fn canonical_string(path: &std::path::Path) -> String {
+    std::fs::canonicalize(path)
+        .unwrap_or_else(|_| path.to_path_buf())
+        .to_string_lossy()
+        .to_string()
+}
+
+/// Add a user folder as a `Library`. The display name is the folder's last
+/// path component (falling back to the full path). `managed_by_git = false`,
+/// `enabled = true`. The stored path is the canonicalized form. Returns `Err`
+/// if the folder is already present (compared canonically) or does not exist.
+pub fn add_user_library(cfg: &mut Config, path: &std::path::Path) -> anyhow::Result<()> {
+    if !path.is_dir() {
+        anyhow::bail!("not a folder: {}", path.display());
+    }
+    let canon = canonical_string(path);
+    let exists = cfg
+        .libraries
+        .iter()
+        .any(|l| canonical_string(std::path::Path::new(&l.path)) == canon);
+    if exists {
+        anyhow::bail!("folder already added");
+    }
+    // Derive the display name from the canonical path so a messy input (e.g.
+    // ".../Dup/./..") or a Windows `\\?\`-prefixed path doesn't yield a weird
+    // name like "." or the verbatim prefix.
+    let name = std::path::Path::new(&canon)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| canon.clone());
+    cfg.libraries.push(Library {
+        name,
+        path: canon,
+        enabled: true,
+        managed_by_git: false,
+    });
+    Ok(())
+}
+
+/// Remove the library whose `path` matches. Refuses to remove a
+/// `managed_by_git` entry (the default library is locked against removal).
+/// No-op if no matching removable library is found.
+pub fn remove_user_library(cfg: &mut Config, path: &str) {
+    cfg.libraries
+        .retain(|l| l.managed_by_git || l.path != path);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,20 +179,32 @@ mod tests {
     fn config_toml_round_trips() {
         let cfg = Config {
             default_repo_url: "https://example.com/hymns.git".into(),
-            libraries: vec![Library {
-                name: "Imnuri".into(),
-                path: "/data/imnuri".into(),
-                enabled: true,
-                managed_by_git: true,
-            }],
+            libraries: vec![
+                Library {
+                    name: "Imnuri".into(),
+                    path: "/data/imnuri".into(),
+                    enabled: true,
+                    managed_by_git: true,
+                },
+                Library {
+                    name: "MyHymns".into(),
+                    path: "/tmp/myhymns".into(),
+                    enabled: true,
+                    managed_by_git: false,
+                },
+            ],
             download_dir: None,
             language: None,
         };
         let text = cfg.to_toml().unwrap();
         let back = Config::from_toml(&text).unwrap();
-        assert_eq!(back.libraries.len(), 1);
+        assert_eq!(back.libraries.len(), 2);
         assert_eq!(back.libraries[0].name, "Imnuri");
         assert!(back.libraries[0].managed_by_git);
+        assert!(back
+            .libraries
+            .iter()
+            .any(|l| !l.managed_by_git && l.name == "MyHymns"));
     }
 
     #[test]
@@ -219,5 +282,56 @@ mod tests {
         };
         set_library_enabled(&mut cfg, "/data/default", false);
         assert!(!cfg.libraries[0].enabled);
+    }
+
+    #[test]
+    fn add_user_library_uses_folder_name_and_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("MyHymns");
+        std::fs::create_dir(&sub).unwrap();
+        let mut cfg = Config::default();
+        add_user_library(&mut cfg, &sub).unwrap();
+        assert_eq!(cfg.libraries.len(), 1);
+        let lib = &cfg.libraries[0];
+        assert_eq!(lib.name, "MyHymns");
+        assert!(lib.enabled);
+        assert!(!lib.managed_by_git);
+    }
+
+    #[test]
+    fn add_user_library_rejects_duplicate_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("Dup");
+        std::fs::create_dir(&sub).unwrap();
+        let mut cfg = Config::default();
+        add_user_library(&mut cfg, &sub).unwrap();
+        let messy = sub.join(".").join("..").join("Dup");
+        assert!(add_user_library(&mut cfg, &messy).is_err());
+        assert_eq!(cfg.libraries.len(), 1);
+    }
+
+    #[test]
+    fn add_user_library_rejects_non_directory() {
+        let mut cfg = Config::default();
+        assert!(add_user_library(&mut cfg, std::path::Path::new("/no/such/dir/xyz")).is_err());
+        assert!(cfg.libraries.is_empty());
+    }
+
+    #[test]
+    fn remove_user_library_removes_user_but_not_default() {
+        let mut cfg = Config {
+            default_repo_url: "x".into(),
+            libraries: vec![
+                Library { name: "Default".into(), path: "/data/default".into(), enabled: true, managed_by_git: true },
+                Library { name: "Mine".into(), path: "/tmp/mine".into(), enabled: true, managed_by_git: false },
+            ],
+            download_dir: None,
+            language: None,
+        };
+        remove_user_library(&mut cfg, "/tmp/mine");
+        assert_eq!(cfg.libraries.len(), 1);
+        remove_user_library(&mut cfg, "/data/default");
+        assert_eq!(cfg.libraries.len(), 1);
+        assert!(cfg.libraries[0].managed_by_git);
     }
 }
