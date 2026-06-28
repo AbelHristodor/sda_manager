@@ -44,6 +44,10 @@ export global I18n {
     in property <string> force-sync-button: "Force sync library";
     in property <string> syncing-button: "Syncing…";
     in property <string> language-heading: "Language";
+    in property <string> user-libraries-heading: "Your library folders";
+    in property <string> add-folder-button: "Add folder…";
+    in property <string> user-libraries-description: "Add your own folders of .pptx hymns. They're searched alongside the built-in library.";
+    in property <string> library-unavailable-suffix: "  (unavailable)";
 }
 
 global Theme {
@@ -517,7 +521,7 @@ component SettingsPanel inherits Rectangle {
                 HorizontalBox {
                     alignment: space-between;
                     Text {
-                        text: "Your library folders";
+                        text: I18n.user-libraries-heading;
                         color: Theme.text;
                         font-weight: 600;
                         vertical-alignment: center;
@@ -527,12 +531,12 @@ component SettingsPanel inherits Rectangle {
                         width: 120px;
                         border-radius: Theme.radius;
                         background: Theme.accent;
-                        Text { text: "Add folder…"; color: white; vertical-alignment: center; horizontal-alignment: center; }
+                        Text { text: I18n.add-folder-button; color: white; vertical-alignment: center; horizontal-alignment: center; }
                         TouchArea { clicked => { root.add-library(); } }
                     }
                 }
                 Text {
-                    text: "Add your own folders of .pptx hymns. They're searched alongside the built-in library.";
+                    text: I18n.user-libraries-description;
                     color: Theme.text-dim; font-size: 12px; wrap: word-wrap;
                 }
                 for row[i] in root.libraries: Rectangle {
@@ -554,7 +558,7 @@ component SettingsPanel inherits Rectangle {
                         VerticalBox {
                             spacing: 0; horizontal-stretch: 1;
                             Text {
-                                text: row.available ? row.name : row.name + "  (unavailable)";
+                                text: row.available ? row.name : row.name + I18n.library-unavailable-suffix;
                                 color: row.available ? Theme.text : Theme.text-dim;
                                 font-weight: 600; overflow: elide;
                             }

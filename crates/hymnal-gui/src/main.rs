@@ -50,6 +50,10 @@ fn apply_language(ui: &AppWindow, lang: Language) -> Strings {
     g.set_force_sync_button(s.force_sync_button.clone().into());
     g.set_syncing_button(s.syncing_button.clone().into());
     g.set_language_heading(s.language_heading.clone().into());
+    g.set_user_libraries_heading(s.user_libraries_heading.clone().into());
+    g.set_add_folder_button(s.add_folder_button.clone().into());
+    g.set_user_libraries_description(s.user_libraries_description.clone().into());
+    g.set_library_unavailable_suffix(s.library_unavailable_suffix.clone().into());
     s
 }
 
@@ -335,11 +339,23 @@ fn main() -> anyhow::Result<()> {
                         Ok(entries) => {
                             let n = entries.len();
                             *searcher_for_timer.borrow_mut() = Some(Searcher::new(entries));
-                            ui.set_library_status(format!("Indexed {n} hymns.").into());
+                            ui.set_library_status(
+                                strings_timer
+                                    .borrow()
+                                    .status_indexed_fmt
+                                    .replacen("{}", &n.to_string(), 1)
+                                    .into(),
+                            );
                             ui.invoke_query_changed("".into());
                         }
                         Err(e) => {
-                            ui.set_library_status(format!("Indexing failed: {e}").into());
+                            ui.set_library_status(
+                                strings_timer
+                                    .borrow()
+                                    .status_indexing_failed_fmt
+                                    .replacen("{}", &e, 1)
+                                    .into(),
+                            );
                         }
                     }
                 }
@@ -618,6 +634,7 @@ fn main() -> anyhow::Result<()> {
     let cfg_addlib = dl_cfg.clone();
     let cfg_path_addlib = cfg_path.clone();
     let reindex_add = reindex.clone();
+    let strings_addlib = strings.clone();
     ui.on_add_library(move || {
         let Some(ui) = weak_addlib.upgrade() else {
             return;
@@ -634,7 +651,7 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
                 ui.set_libraries(ModelRc::from(Rc::new(VecModel::from(library_rows(&cfg)))));
-                ui.set_library_status("Indexing…".into());
+                ui.set_library_status(strings_addlib.borrow().status_indexing.clone().into());
                 reindex_add(cfg.clone());
             }
             Err(e) => {
@@ -647,6 +664,7 @@ fn main() -> anyhow::Result<()> {
     let cfg_rmlib = dl_cfg.clone();
     let cfg_path_rmlib = cfg_path.clone();
     let reindex_rm = reindex.clone();
+    let strings_rmlib = strings.clone();
     ui.on_remove_library(move |path| {
         let Some(ui) = weak_rmlib.upgrade() else {
             return;
@@ -659,7 +677,7 @@ fn main() -> anyhow::Result<()> {
             }
         }
         ui.set_libraries(ModelRc::from(Rc::new(VecModel::from(library_rows(&cfg)))));
-        ui.set_library_status("Indexing…".into());
+        ui.set_library_status(strings_rmlib.borrow().status_indexing.clone().into());
         reindex_rm(cfg.clone());
     });
 
@@ -667,6 +685,7 @@ fn main() -> anyhow::Result<()> {
     let cfg_togglib = dl_cfg.clone();
     let cfg_path_togglib = cfg_path.clone();
     let reindex_tog = reindex.clone();
+    let strings_togglib = strings.clone();
     ui.on_set_library_enabled(move |path, enabled| {
         let Some(ui) = weak_togglib.upgrade() else {
             return;
@@ -679,7 +698,7 @@ fn main() -> anyhow::Result<()> {
             }
         }
         ui.set_libraries(ModelRc::from(Rc::new(VecModel::from(library_rows(&cfg)))));
-        ui.set_library_status("Indexing…".into());
+        ui.set_library_status(strings_togglib.borrow().status_indexing.clone().into());
         reindex_tog(cfg.clone());
     });
 

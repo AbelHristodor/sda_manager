@@ -86,6 +86,10 @@ pub struct Strings {
     pub force_sync_button: String,
     pub syncing_button: String,
     pub language_heading: String,
+    pub user_libraries_heading: String,
+    pub add_folder_button: String,
+    pub user_libraries_description: String,
+    pub library_unavailable_suffix: String,
     // Dynamic status (main.rs). `{}` placeholders filled with format!.
     pub status_loading: String,
     pub status_library_ready: String,
@@ -98,6 +102,9 @@ pub struct Strings {
     pub update_staged_fmt: String,      // one `{}` = version
     pub slide_counter_fmt: String,      // "{} — slide {}/{}" = title, idx, count
     pub slide_zero_fmt: String,         // "{} — 0 slides" = title
+    pub status_indexing: String,        // "Indexing…"
+    pub status_indexed_fmt: String,     // one `{}` = hymn count
+    pub status_indexing_failed_fmt: String, // one `{}` = error
 }
 
 impl Strings {
@@ -135,6 +142,10 @@ impl Strings {
             &self.force_sync_button,
             &self.syncing_button,
             &self.language_heading,
+            &self.user_libraries_heading,
+            &self.add_folder_button,
+            &self.user_libraries_description,
+            &self.library_unavailable_suffix,
             &self.status_loading,
             &self.status_library_ready,
             &self.status_re_cloning,
@@ -146,6 +157,9 @@ impl Strings {
             &self.update_staged_fmt,
             &self.slide_counter_fmt,
             &self.slide_zero_fmt,
+            &self.status_indexing,
+            &self.status_indexed_fmt,
+            &self.status_indexing_failed_fmt,
         ]
     }
 
@@ -174,6 +188,10 @@ impl Strings {
             force_sync_button: "Force sync library".into(),
             syncing_button: "Syncing…".into(),
             language_heading: "Language".into(),
+            user_libraries_heading: "Your library folders".into(),
+            add_folder_button: "Add folder…".into(),
+            user_libraries_description: "Add your own folders of .pptx hymns. They're searched alongside the built-in library.".into(),
+            library_unavailable_suffix: "  (unavailable)".into(),
             status_loading: "Loading hymn library…".into(),
             status_library_ready: "Library ready.".into(),
             status_re_cloning: "Re-cloning and reindexing…".into(),
@@ -185,6 +203,9 @@ impl Strings {
             update_staged_fmt: "Update {} staged — restart to apply.".into(),
             slide_counter_fmt: "{} — slide {}/{}".into(),
             slide_zero_fmt: "{} — 0 slides".into(),
+            status_indexing: "Indexing…".into(),
+            status_indexed_fmt: "Indexed {} hymns.".into(),
+            status_indexing_failed_fmt: "Indexing failed: {}".into(),
         }
     }
 
@@ -213,6 +234,10 @@ impl Strings {
             force_sync_button: "Sincronizza innario".into(),
             syncing_button: "Sincronizzazione…".into(),
             language_heading: "Lingua".into(),
+            user_libraries_heading: "Le tue cartelle".into(),
+            add_folder_button: "Aggiungi cartella…".into(),
+            user_libraries_description: "Aggiungi le tue cartelle di inni .pptx. Vengono cercate insieme all'innario integrato.".into(),
+            library_unavailable_suffix: "  (non disponibile)".into(),
             status_loading: "Caricamento dell'innario…".into(),
             status_library_ready: "Innario pronto.".into(),
             status_re_cloning: "Riscaricamento e reindicizzazione…".into(),
@@ -224,6 +249,9 @@ impl Strings {
             update_staged_fmt: "Aggiornamento {} pronto — riavvia per applicarlo.".into(),
             slide_counter_fmt: "{} — diapositiva {}/{}".into(),
             slide_zero_fmt: "{} — 0 diapositive".into(),
+            status_indexing: "Indicizzazione…".into(),
+            status_indexed_fmt: "Indicizzati {} inni.".into(),
+            status_indexing_failed_fmt: "Indicizzazione non riuscita: {}".into(),
         }
     }
 
@@ -252,6 +280,10 @@ impl Strings {
             force_sync_button: "Sincronizează imnarul".into(),
             syncing_button: "Se sincronizează…".into(),
             language_heading: "Limbă".into(),
+            user_libraries_heading: "Folderele tale".into(),
+            add_folder_button: "Adaugă folder…".into(),
+            user_libraries_description: "Adaugă propriile foldere cu imnuri .pptx. Sunt căutate împreună cu imnarul integrat.".into(),
+            library_unavailable_suffix: "  (indisponibil)".into(),
             status_loading: "Se încarcă imnarul…".into(),
             status_library_ready: "Imnar pregătit.".into(),
             status_re_cloning: "Se reclonează și se reindexează…".into(),
@@ -263,6 +295,9 @@ impl Strings {
             update_staged_fmt: "Actualizarea {} este pregătită — repornește pentru a o aplica.".into(),
             slide_counter_fmt: "{} — diapozitivul {}/{}".into(),
             slide_zero_fmt: "{} — 0 diapozitive".into(),
+            status_indexing: "Se indexează…".into(),
+            status_indexed_fmt: "{} imnuri indexate.".into(),
+            status_indexing_failed_fmt: "Indexare eșuată: {}".into(),
         }
     }
 }
