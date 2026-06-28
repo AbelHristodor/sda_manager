@@ -910,8 +910,10 @@ fn main() -> anyhow::Result<()> {
         let weak = ui.as_weak();
         ui.on_new_theme(move || {
             let Some(ui) = weak.upgrade() else { return };
-            let mut t = Theme::default();
-            t.name = "Custom".into();
+            let t = Theme {
+                name: "Custom".into(),
+                ..Theme::default()
+            };
             load_theme_into_editor(&ui, &t);
         });
     }
