@@ -34,6 +34,12 @@ pub struct Config {
     /// (detect from OS locale on first run).
     #[serde(default)]
     pub language: Option<String>,
+    /// Name of the active projection theme. `None` => built-in Default.
+    #[serde(default)]
+    pub active_theme: Option<String>,
+    /// Index of the last-used output display. `None` => auto-pick.
+    #[serde(default)]
+    pub output_display: Option<i32>,
 }
 
 impl Default for Config {
@@ -43,6 +49,8 @@ impl Default for Config {
             libraries: Vec::new(),
             download_dir: None,
             language: None,
+            active_theme: None,
+            output_display: None,
         }
     }
 }
@@ -219,6 +227,8 @@ mod tests {
             ],
             download_dir: None,
             language: None,
+            active_theme: None,
+            output_display: None,
         };
         let text = cfg.to_toml().unwrap();
         let back = Config::from_toml(&text).unwrap();
@@ -244,6 +254,8 @@ mod tests {
             libraries: vec![],
             download_dir: Some("/home/user/Videos".into()),
             language: None,
+            active_theme: None,
+            output_display: None,
         };
         let back = Config::from_toml(&cfg.to_toml().unwrap()).unwrap();
         assert_eq!(back.download_dir, Some("/home/user/Videos".into()));
@@ -256,9 +268,13 @@ mod tests {
             libraries: vec![],
             download_dir: None,
             language: Some("ro".into()),
+            active_theme: Some("Sunset".into()),
+            output_display: Some(2),
         };
         let back = Config::from_toml(&cfg.to_toml().unwrap()).unwrap();
         assert_eq!(back.language, Some("ro".into()));
+        assert_eq!(back.active_theme, Some("Sunset".into()));
+        assert_eq!(back.output_display, Some(2));
     }
 
     #[test]
@@ -287,6 +303,8 @@ mod tests {
             }],
             download_dir: None,
             language: None,
+            active_theme: None,
+            output_display: None,
         };
         set_library_enabled(&mut cfg, "/tmp/u", false);
         assert!(!cfg.libraries[0].enabled);
@@ -303,6 +321,8 @@ mod tests {
             }],
             download_dir: None,
             language: None,
+            active_theme: None,
+            output_display: None,
         };
         set_library_enabled(&mut cfg, "/data/default", false);
         assert!(!cfg.libraries[0].enabled);
@@ -351,6 +371,8 @@ mod tests {
             ],
             download_dir: None,
             language: None,
+            active_theme: None,
+            output_display: None,
         };
         remove_user_library(&mut cfg, "/tmp/mine");
         assert_eq!(cfg.libraries.len(), 1);

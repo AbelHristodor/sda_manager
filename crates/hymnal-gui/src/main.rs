@@ -153,6 +153,38 @@ fn apply_theme_to_projector(p: &ProjectorWindow, theme: &Theme, slide: &str, bla
     p.set_bg_color(bg);
 }
 
+/// Mirror the presentation state into the Control tab's text properties.
+fn refresh_control_view(ui: &AppWindow, p: &hymnal_core::present::PresentationState) {
+    let number = p
+        .number
+        .as_deref()
+        .map(|n| format!("{n}. "))
+        .unwrap_or_default();
+    ui.set_ctl_title(format!("{number}{}", p.title).into());
+    ui.set_ctl_live(p.current_slide().unwrap_or("").into());
+    ui.set_ctl_next(p.next_slide().unwrap_or("").into());
+    ui.set_ctl_pos(
+        if p.slide_count() > 0 {
+            format!("{}/{}", p.index + 1, p.slide_count())
+        } else {
+            String::new()
+        }
+        .into(),
+    );
+    ui.set_ctl_blank(p.blank);
+}
+
+/// Push the current slide + theme onto the live projector window, if open.
+fn push_to_projector(
+    projector: &Rc<std::cell::RefCell<Option<ProjectorWindow>>>,
+    theme: &Theme,
+    p: &hymnal_core::present::PresentationState,
+) {
+    if let Some(win) = projector.borrow().as_ref() {
+        apply_theme_to_projector(win, theme, p.current_slide().unwrap_or(""), p.blank);
+    }
+}
+
 /// Build the Slint `LibraryRow` model from the config, ensuring the default
 /// git-managed library appears even if it isn't yet written to the config on
 /// disk (mirrors refresh::register_default_library's "add if no managed entry").
@@ -260,6 +292,48 @@ fn main() -> anyhow::Result<()> {
     let themes: Rc<std::cell::RefCell<Vec<Theme>>> = Rc::new(std::cell::RefCell::new(Vec::new()));
     refresh_theme_list(&ui, &themes);
     load_theme_into_editor(&ui, &Theme::default());
+
+    // ---- Control tab state (projection) ----
+    use hymnal_core::present::PresentationState;
+    let present = Rc::new(std::cell::RefCell::new(PresentationState::default()));
+    let projector: Rc<std::cell::RefCell<Option<ProjectorWindow>>> =
+        Rc::new(std::cell::RefCell::new(None));
+    let displays = Rc::new(projector::list_displays());
+    let active_theme = Rc::new(std::cell::RefCell::new(Theme::default()));
+
+    // Populate display picker (plain-string ComboBox model).
+    {
+        let rows: Vec<slint::SharedString> = displays
+            .iter()
+            .map(|d| slint::SharedString::from(d.label.clone()))
+            .collect();
+        ui.set_display_names(slint::ModelRc::from(Rc::new(slint::VecModel::from(rows))));
+        ui.set_display_index(projector::default_display_index(&displays));
+    }
+    // Populate the Control theme ComboBox (plain strings) from the themes list.
+    {
+        let names: Vec<slint::SharedString> = themes
+            .borrow()
+            .iter()
+            .map(|t| slint::SharedString::from(t.name.clone()))
+            .collect();
+        ui.set_ctl_theme_names(slint::ModelRc::from(Rc::new(slint::VecModel::from(names))));
+    }
+
+    // Restore active theme + output display from persisted config.
+    if let Some(p) = hymnal_core::library::config_path() {
+        let cfg = Config::load(&p).unwrap_or_default();
+        if let (Some(name), Some(dir)) =
+            (cfg.active_theme.clone(), hymnal_core::library::themes_dir())
+        {
+            if let Ok(t) = store::load_theme(&dir, &name) {
+                *active_theme.borrow_mut() = t;
+            }
+        }
+        if let Some(d) = cfg.output_display {
+            ui.set_display_index(d);
+        }
+    }
 
     // Channel carrying download events from the worker thread to the UI thread.
     let (dl_tx, dl_rx) = mpsc::channel::<DownloadEvent>();
@@ -858,6 +932,193 @@ fn main() -> anyhow::Result<()> {
         });
     }
     ui.on_edit_changed(|| {});
+
+    // ---- Control tab handlers ----
+    // Start projecting.
+    {
+        let projector = projector.clone();
+        let displays = displays.clone();
+        let present = present.clone();
+        let active_theme = active_theme.clone();
+        let weak = ui.as_weak();
+        ui.on_ctl_start(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            if projector.borrow().is_some() {
+                return;
+            }
+            let target = ui.get_display_index();
+            if let Some(win) = projector::open_projector(&displays, target) {
+                *projector.borrow_mut() = Some(win);
+                ui.set_ctl_projecting(true);
+                push_to_projector(&projector, &active_theme.borrow(), &present.borrow());
+            }
+        });
+    }
+    // Stop.
+    {
+        let projector = projector.clone();
+        let weak = ui.as_weak();
+        ui.on_ctl_stop(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            if let Some(win) = projector.borrow_mut().take() {
+                use slint::ComponentHandle;
+                let _ = win.hide();
+            }
+            ui.set_ctl_projecting(false);
+        });
+    }
+    // Next.
+    {
+        let present = present.clone();
+        let projector = projector.clone();
+        let active_theme = active_theme.clone();
+        let weak = ui.as_weak();
+        ui.on_ctl_go_next(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            present.borrow_mut().next();
+            refresh_control_view(&ui, &present.borrow());
+            push_to_projector(&projector, &active_theme.borrow(), &present.borrow());
+        });
+    }
+    // Prev.
+    {
+        let present = present.clone();
+        let projector = projector.clone();
+        let active_theme = active_theme.clone();
+        let weak = ui.as_weak();
+        ui.on_ctl_prev(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            present.borrow_mut().prev();
+            refresh_control_view(&ui, &present.borrow());
+            push_to_projector(&projector, &active_theme.borrow(), &present.borrow());
+        });
+    }
+    // Blank toggle.
+    {
+        let present = present.clone();
+        let projector = projector.clone();
+        let active_theme = active_theme.clone();
+        let weak = ui.as_weak();
+        ui.on_ctl_blank_toggle(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            present.borrow_mut().toggle_blank();
+            refresh_control_view(&ui, &present.borrow());
+            push_to_projector(&projector, &active_theme.borrow(), &present.borrow());
+        });
+    }
+    // Theme picked (Control ComboBox): set active, persist, push.
+    {
+        let themes = themes.clone();
+        let active_theme = active_theme.clone();
+        let projector = projector.clone();
+        let present = present.clone();
+        let weak = ui.as_weak();
+        ui.on_ctl_theme_picked(move |i| {
+            let _ = weak.upgrade();
+            if let Some(t) = themes.borrow().get(i.max(0) as usize).cloned() {
+                *active_theme.borrow_mut() = t.clone();
+                push_to_projector(&projector, &active_theme.borrow(), &present.borrow());
+                if let Some(p) = hymnal_core::library::config_path() {
+                    let mut cfg = Config::load(&p).unwrap_or_default();
+                    cfg.active_theme = Some(t.name.clone());
+                    let _ = cfg.save(&p);
+                }
+            }
+        });
+    }
+    // Display picked: persist.
+    {
+        ui.on_ctl_display_picked(move |i| {
+            if let Some(p) = hymnal_core::library::config_path() {
+                let mut cfg = Config::load(&p).unwrap_or_default();
+                cfg.output_display = Some(i);
+                let _ = cfg.save(&p);
+            }
+        });
+    }
+    // Control search (reuses Searcher); maps row -> entry index.
+    let ctl_rows: Rc<std::cell::RefCell<Vec<usize>>> = Rc::new(std::cell::RefCell::new(Vec::new()));
+    {
+        let searcher = searcher.clone();
+        let ctl_rows = ctl_rows.clone();
+        let weak = ui.as_weak();
+        ui.on_ctl_search_changed(move |q| {
+            let Some(ui) = weak.upgrade() else { return };
+            let guard = searcher.borrow();
+            let Some(s) = guard.as_ref() else { return };
+            let hits = s.search(&q);
+            let mut rows = Vec::new();
+            let mut map = Vec::new();
+            for h in &hits {
+                rows.push(slint::StandardListViewItem::from(slint::SharedString::from(
+                    row_label(h.entry),
+                )));
+                map.push(h.index);
+            }
+            *ctl_rows.borrow_mut() = map;
+            ui.set_ctl_search_results(slint::ModelRc::from(Rc::new(slint::VecModel::from(rows))));
+        });
+    }
+    // Load highlighted hymn into the presentation.
+    {
+        let searcher = searcher.clone();
+        let ctl_rows = ctl_rows.clone();
+        let present = present.clone();
+        let projector = projector.clone();
+        let active_theme = active_theme.clone();
+        let weak = ui.as_weak();
+        ui.on_ctl_search_activated(move |i| {
+            let Some(ui) = weak.upgrade() else { return };
+            if i < 0 {
+                return;
+            }
+            let guard = searcher.borrow();
+            let Some(s) = guard.as_ref() else { return };
+            let entry = ctl_rows
+                .borrow()
+                .get(i as usize)
+                .and_then(|&ei| s.entry(ei))
+                .cloned();
+            if let Some(e) = entry {
+                present
+                    .borrow_mut()
+                    .load_hymn(e.number.clone(), e.title.clone(), e.slides.clone());
+                refresh_control_view(&ui, &present.borrow());
+                push_to_projector(&projector, &active_theme.borrow(), &present.borrow());
+            }
+        });
+    }
+    // Library "Project" button: load highlighted Library hymn, switch to Control (tab 3).
+    {
+        let searcher = searcher.clone();
+        let row_to_entry = row_to_entry.clone();
+        let present = present.clone();
+        let projector = projector.clone();
+        let active_theme = active_theme.clone();
+        let weak = ui.as_weak();
+        ui.on_project_current(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let idx = ui.get_current_index();
+            if idx < 0 {
+                return;
+            }
+            let guard = searcher.borrow();
+            let Some(s) = guard.as_ref() else { return };
+            let entry = row_to_entry
+                .borrow()
+                .get(idx as usize)
+                .and_then(|&ei| s.entry(ei))
+                .cloned();
+            if let Some(e) = entry {
+                present
+                    .borrow_mut()
+                    .load_hymn(e.number.clone(), e.title.clone(), e.slides.clone());
+                refresh_control_view(&ui, &present.borrow());
+                push_to_projector(&projector, &active_theme.borrow(), &present.borrow());
+                ui.set_active_tab(3);
+            }
+        });
+    }
 
     // Keep the timer alive for the lifetime of the application; dropping it
     // would stop the channel polling.
