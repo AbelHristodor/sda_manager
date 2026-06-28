@@ -1,4 +1,4 @@
-import { LineEdit, StandardListView, Button, ScrollView, VerticalBox, HorizontalBox } from "std-widgets.slint";
+import { LineEdit, StandardListView, Button, ScrollView, VerticalBox, HorizontalBox, ComboBox } from "std-widgets.slint";
 import { ProjectorWindow } from "projector.slint";
 
 export struct DownloadState {
@@ -57,6 +57,18 @@ export global I18n {
     in property <string> theme-preview-sample: "Plecaţi-vă lui Dumnezeu";
     in property <string> theme-font-label: "Font";
     in property <string> theme-size-label: "Size";
+    in property <string> nav-control: "Control";
+    in property <string> control-heading: "Control";
+    in property <string> control-start: "▶ Start projecting";
+    in property <string> control-stop: "■ Stop";
+    in property <string> control-blank: "Blank (B)";
+    in property <string> control-prev: "◀ Prev";
+    in property <string> control-next: "Next ▶";
+    in property <string> control-next-label: "NEXT";
+    in property <string> control-live: "LIVE";
+    in property <string> control-output: "Output";
+    in property <string> control-theme: "Theme";
+    in property <string> library-project: "Project";
 }
 
 global Theme {
@@ -144,6 +156,12 @@ component Sidebar inherits Rectangle {
             clicked => { root.active-tab = 2; }
         }
         NavItem {
+            label: I18n.nav-control;
+            icon: @image-url("../../../assets/icon-control.svg");
+            selected: root.active-tab == 3;
+            clicked => { root.active-tab = 3; }
+        }
+        NavItem {
             label: I18n.nav-themes;
             icon: @image-url("../../../assets/icon-themes.svg");
             selected: root.active-tab == 4;
@@ -171,6 +189,7 @@ component LibraryPanel inherits Rectangle {
     callback current-changed(int);
     callback prev-slide();
     callback next-slide();
+    callback project-current();
 
     // Typing focus lives in the search field; the surrounding FocusScope
     // catches arrow keys to drive the list (Up/Down) and slides (Left/Right).
@@ -296,6 +315,7 @@ component LibraryPanel inherits Rectangle {
                                 text: I18n.reveal-in-folder;
                                 clicked => { root.reveal-current(); }
                             }
+                            Button { text: I18n.library-project; clicked => { root.project-current(); } }
                         }
 
                         // Status bar pinned at the bottom of the preview.
@@ -703,6 +723,86 @@ component ThemesPanel inherits Rectangle {
     }
 }
 
+component ControlPanel inherits Rectangle {
+    in property <string> current-title;
+    in property <string> live-text;
+    in property <string> next-text;
+    in property <string> slide-pos;
+    in property <bool> projecting;
+    in property <bool> blank;
+    in property <[string]> theme-names;
+    in-out property <int> ctl-theme-index;
+    in property <[string]> display-names;
+    in-out property <int> display-index;
+    in property <[StandardListViewItem]> search-results;
+    in-out property <int> search-current;
+    callback start();
+    callback stop();
+    callback blank-toggle();
+    callback prev();
+    callback next();
+    callback theme-picked(int);
+    callback display-picked(int);
+    callback search-changed(string);
+    callback search-activated(int);
+
+    forward-focus: ctl-keys;
+    background: Theme.bg;
+
+    ctl-keys := FocusScope {
+        capture-key-pressed(event) => {
+            if (event.text == Key.RightArrow || event.text == " ") { root.next(); return accept; }
+            if (event.text == Key.LeftArrow) { root.prev(); return accept; }
+            if (event.text == "b" || event.text == "B") { root.blank-toggle(); return accept; }
+            if (event.text == Key.Escape) { root.stop(); return accept; }
+            return reject;
+        }
+        VerticalBox {
+            padding: 14px; spacing: 10px;
+            HorizontalBox {
+                Text { text: I18n.control-theme + ":"; color: Theme.text-dim; vertical-alignment: center; }
+                ComboBox { model: root.theme-names; current-index <=> root.ctl-theme-index;
+                    selected => { root.theme-picked(self.current-index); } }
+                Text { text: I18n.control-output + ":"; color: Theme.text-dim; vertical-alignment: center; }
+                ComboBox { model: root.display-names; current-index <=> root.display-index;
+                    selected => { root.display-picked(self.current-index); } }
+                Button { text: root.projecting ? I18n.control-stop : I18n.control-start;
+                    clicked => { if (root.projecting) { root.stop(); } else { root.start(); } } }
+                Button { text: I18n.control-blank; clicked => { root.blank-toggle(); } }
+            }
+            LineEdit {
+                placeholder-text: I18n.search-placeholder;
+                edited(t) => { root.search-changed(t); }
+                accepted(t) => { root.search-activated(root.search-current); }
+            }
+            HorizontalBox {
+                StandardListView {
+                    width: 38%;
+                    model: root.search-results;
+                    current-item <=> root.search-current;
+                    current-item-changed(i) => { root.search-activated(i); }
+                }
+                VerticalBox {
+                    Text { text: root.current-title; color: Theme.accent-soft; font-weight: 700; }
+                    Text { text: I18n.control-live + "  " + root.slide-pos; color: Theme.text-dim; font-size: 11px; }
+                    Rectangle { height: 120px; background: #0b1f3a; border-radius: Theme.radius;
+                        Text { text: root.blank ? "" : root.live-text; color: white; font-weight: 700;
+                            horizontal-alignment: center; vertical-alignment: center;
+                            width: parent.width - 24px; x: 12px; wrap: word-wrap; } }
+                    Text { text: I18n.control-next-label; color: Theme.text-dim; font-size: 11px; }
+                    Rectangle { height: 70px; background: #0b1f3a; border-radius: Theme.radius;
+                        Text { text: root.next-text; color: #cbd5e1;
+                            horizontal-alignment: center; vertical-alignment: center;
+                            width: parent.width - 24px; x: 12px; wrap: word-wrap; } }
+                    HorizontalBox { alignment: center;
+                        Button { text: I18n.control-prev; clicked => { root.prev(); } }
+                        Button { text: I18n.control-next; clicked => { root.next(); } } }
+                }
+            }
+        }
+    }
+}
+
 export component AppWindow inherits Window {
     title: I18n.app-title;
     // Live window/titlebar icon, embedded at compile time. Path is relative to
@@ -776,6 +876,32 @@ export component AppWindow inherits Window {
     callback delete-theme();
     callback edit-changed();
 
+    // Library: Project action
+    callback project-current();
+
+    // Control
+    in property <string> ctl-title;
+    in property <string> ctl-live;
+    in property <string> ctl-next;
+    in property <string> ctl-pos;
+    in property <bool> ctl-projecting;
+    in property <bool> ctl-blank;
+    in property <[string]> ctl-theme-names;
+    in property <[string]> display-names;
+    in-out property <int> display-index;
+    in-out property <int> ctl-theme-index;
+    in property <[StandardListViewItem]> ctl-search-results;
+    in-out property <int> ctl-search-current;
+    callback ctl-start();
+    callback ctl-stop();
+    callback ctl-blank-toggle();
+    callback ctl-prev();
+    callback ctl-go-next();
+    callback ctl-theme-picked(int);
+    callback ctl-display-picked(int);
+    callback ctl-search-changed(string);
+    callback ctl-search-activated(int);
+
     HorizontalBox {
         padding: 0;
         spacing: 0;
@@ -795,6 +921,7 @@ export component AppWindow inherits Window {
             current-changed(i) => { root.current-changed(i); }
             prev-slide => { root.prev-slide(); }
             next-slide => { root.next-slide(); }
+            project-current => { root.project-current(); }
         }
         if root.active-tab == 1: DownloaderPanel {
             horizontal-stretch: 1;
@@ -819,6 +946,30 @@ export component AppWindow inherits Window {
             add-library => { root.add-library(); }
             remove-library(p) => { root.remove-library(p); }
             set-library-enabled(p, e) => { root.set-library-enabled(p, e); }
+        }
+        if root.active-tab == 3: ControlPanel {
+            horizontal-stretch: 1;
+            current-title: root.ctl-title;
+            live-text: root.ctl-live;
+            next-text: root.ctl-next;
+            slide-pos: root.ctl-pos;
+            projecting: root.ctl-projecting;
+            blank: root.ctl-blank;
+            theme-names: root.ctl-theme-names;
+            ctl-theme-index <=> root.ctl-theme-index;
+            display-names: root.display-names;
+            display-index <=> root.display-index;
+            search-results: root.ctl-search-results;
+            search-current <=> root.ctl-search-current;
+            start => { root.ctl-start(); }
+            stop => { root.ctl-stop(); }
+            blank-toggle => { root.ctl-blank-toggle(); }
+            prev => { root.ctl-prev(); }
+            next => { root.ctl-go-next(); }
+            theme-picked(i) => { root.ctl-theme-picked(i); }
+            display-picked(i) => { root.ctl-display-picked(i); }
+            search-changed(t) => { root.ctl-search-changed(t); }
+            search-activated(i) => { root.ctl-search-activated(i); }
         }
         if root.active-tab == 4: ThemesPanel {
             horizontal-stretch: 1;

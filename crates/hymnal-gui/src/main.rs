@@ -64,6 +64,18 @@ fn apply_language(ui: &AppWindow, lang: Language) -> Strings {
     g.set_theme_preview_sample(s.theme_preview_sample.clone().into());
     g.set_theme_font_label(s.theme_font_label.clone().into());
     g.set_theme_size_label(s.theme_size_label.clone().into());
+    g.set_nav_control(s.nav_control.clone().into());
+    g.set_control_heading(s.control_heading.clone().into());
+    g.set_control_start(s.control_start.clone().into());
+    g.set_control_stop(s.control_stop.clone().into());
+    g.set_control_blank(s.control_blank.clone().into());
+    g.set_control_prev(s.control_prev.clone().into());
+    g.set_control_next(s.control_next.clone().into());
+    g.set_control_next_label(s.control_next_label.clone().into());
+    g.set_control_live(s.control_live.clone().into());
+    g.set_control_output(s.control_output.clone().into());
+    g.set_control_theme(s.control_theme.clone().into());
+    g.set_library_project(s.library_project.clone().into());
     s
 }
 
