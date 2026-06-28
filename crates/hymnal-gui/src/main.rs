@@ -56,6 +56,14 @@ fn apply_language(ui: &AppWindow, lang: Language) -> Strings {
     g.set_add_folder_button(s.add_folder_button.clone().into());
     g.set_user_libraries_description(s.user_libraries_description.clone().into());
     g.set_library_unavailable_suffix(s.library_unavailable_suffix.clone().into());
+    g.set_nav_themes(s.nav_themes.clone().into());
+    g.set_themes_heading(s.themes_heading.clone().into());
+    g.set_theme_new(s.theme_new.clone().into());
+    g.set_theme_save(s.theme_save.clone().into());
+    g.set_theme_delete(s.theme_delete.clone().into());
+    g.set_theme_preview_sample(s.theme_preview_sample.clone().into());
+    g.set_theme_font_label(s.theme_font_label.clone().into());
+    g.set_theme_size_label(s.theme_size_label.clone().into());
     s
 }
 

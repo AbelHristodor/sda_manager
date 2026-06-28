@@ -49,6 +49,14 @@ export global I18n {
     in property <string> add-folder-button: "Add folder…";
     in property <string> user-libraries-description: "Add your own folders of .pptx hymns. They're searched alongside the built-in library.";
     in property <string> library-unavailable-suffix: "  (unavailable)";
+    in property <string> nav-themes: "Themes";
+    in property <string> themes-heading: "Themes";
+    in property <string> theme-new: "New theme";
+    in property <string> theme-save: "Save";
+    in property <string> theme-delete: "Delete";
+    in property <string> theme-preview-sample: "Plecaţi-vă lui Dumnezeu";
+    in property <string> theme-font-label: "Font";
+    in property <string> theme-size-label: "Size";
 }
 
 global Theme {
@@ -134,6 +142,12 @@ component Sidebar inherits Rectangle {
             icon: @image-url("../../../assets/icon-settings.svg");
             selected: root.active-tab == 2;
             clicked => { root.active-tab = 2; }
+        }
+        NavItem {
+            label: I18n.nav-themes;
+            icon: @image-url("../../../assets/icon-themes.svg");
+            selected: root.active-tab == 4;
+            clicked => { root.active-tab = 4; }
         }
     }
 }
@@ -619,6 +633,76 @@ component SettingsPanel inherits Rectangle {
     }
 }
 
+component ThemesPanel inherits Rectangle {
+    in property <[StandardListViewItem]> theme-names;
+    in-out property <int> theme-index;
+    in-out property <string> edit-font-family;
+    in-out property <float> edit-font-size;
+    in-out property <int> edit-font-weight;
+    in-out property <color> edit-text-color;
+    in-out property <color> edit-bg-color;
+    in-out property <string> edit-h-align;
+    callback theme-selected(int);
+    callback new-theme();
+    callback save-theme();
+    callback delete-theme();
+    callback edit-changed();
+    background: Theme.bg;
+    HorizontalBox {
+        padding: 16px;
+        spacing: 16px;
+        VerticalBox {
+            width: 220px;
+            Text { text: I18n.themes-heading; color: Theme.text; font-size: 18px; font-weight: 700; }
+            StandardListView {
+                model: root.theme-names;
+                current-item <=> root.theme-index;
+                current-item-changed(i) => { root.theme-selected(i); }
+            }
+            HorizontalBox {
+                Button { text: I18n.theme-new; clicked => { root.new-theme(); } }
+                Button { text: I18n.theme-delete; clicked => { root.delete-theme(); } }
+            }
+        }
+        VerticalBox {
+            Rectangle {
+                height: 200px;
+                background: root.edit-bg-color;
+                border-radius: Theme.radius;
+                Text {
+                    text: I18n.theme-preview-sample;
+                    color: root.edit-text-color;
+                    font-family: root.edit-font-family;
+                    font-size: root.edit-font-size * 1px;
+                    font-weight: root.edit-font-weight;
+                    horizontal-alignment: root.edit-h-align == "left" ? TextHorizontalAlignment.left
+                        : root.edit-h-align == "right" ? TextHorizontalAlignment.right
+                        : TextHorizontalAlignment.center;
+                    vertical-alignment: center;
+                    width: parent.width - 32px;
+                    x: 16px;
+                    wrap: word-wrap;
+                }
+            }
+            HorizontalBox {
+                Text { text: I18n.theme-font-label; color: Theme.text-dim; vertical-alignment: center; }
+                LineEdit {
+                    text <=> root.edit-font-family;
+                    edited => { root.edit-changed(); }
+                }
+            }
+            HorizontalBox {
+                Text { text: I18n.theme-size-label; color: Theme.text-dim; vertical-alignment: center; }
+                LineEdit {
+                    text: root.edit-font-size;
+                    edited(t) => { root.edit-font-size = t.to-float(); root.edit-changed(); }
+                }
+            }
+            Button { text: I18n.theme-save; clicked => { root.save-theme(); } }
+        }
+    }
+}
+
 export component AppWindow inherits Window {
     title: I18n.app-title;
     // Live window/titlebar icon, embedded at compile time. Path is relative to
@@ -677,6 +761,21 @@ export component AppWindow inherits Window {
     callback remove-library(string);
     callback set-library-enabled(string, bool);
 
+    // Themes
+    in property <[StandardListViewItem]> theme-names;
+    in-out property <int> theme-index;
+    in-out property <string> edit-font-family;
+    in-out property <float> edit-font-size;
+    in-out property <int> edit-font-weight;
+    in-out property <color> edit-text-color;
+    in-out property <color> edit-bg-color;
+    in-out property <string> edit-h-align;
+    callback theme-selected(int);
+    callback new-theme();
+    callback save-theme();
+    callback delete-theme();
+    callback edit-changed();
+
     HorizontalBox {
         padding: 0;
         spacing: 0;
@@ -720,6 +819,22 @@ export component AppWindow inherits Window {
             add-library => { root.add-library(); }
             remove-library(p) => { root.remove-library(p); }
             set-library-enabled(p, e) => { root.set-library-enabled(p, e); }
+        }
+        if root.active-tab == 4: ThemesPanel {
+            horizontal-stretch: 1;
+            theme-names: root.theme-names;
+            theme-index <=> root.theme-index;
+            edit-font-family <=> root.edit-font-family;
+            edit-font-size <=> root.edit-font-size;
+            edit-font-weight <=> root.edit-font-weight;
+            edit-text-color <=> root.edit-text-color;
+            edit-bg-color <=> root.edit-bg-color;
+            edit-h-align <=> root.edit-h-align;
+            theme-selected(i) => { root.theme-selected(i); }
+            new-theme => { root.new-theme(); }
+            save-theme => { root.save-theme(); }
+            delete-theme => { root.delete-theme(); }
+            edit-changed => { root.edit-changed(); }
         }
     }
 }
