@@ -10,6 +10,34 @@ export struct DownloadState {
     message: string,
 }
 
+// All user-facing strings, filled at runtime from Rust (main.rs::apply_language).
+// Defaults mirror English so the design previews sensibly before Rust sets them.
+export global I18n {
+    in property <string> app-title: "SDA Manager";
+    in property <string> nav-library: "Library";
+    in property <string> nav-downloader: "Video Downloader";
+    in property <string> nav-settings: "Settings";
+    in property <string> search-placeholder: "Search by number, title, or lyrics…";
+    in property <string> prev-slide: "‹ Prev";
+    in property <string> next-slide: "Next ›";
+    in property <string> open-in-powerpoint: "Open in PowerPoint";
+    in property <string> reveal-in-folder: "Reveal in folder";
+    in property <string> downloader-heading: "Video Downloader";
+    in property <string> downloader-subtitle: "Paste a YouTube link and choose where to save it.";
+    in property <string> downloader-url-placeholder: "Paste a YouTube URL…";
+    in property <string> choose: "Choose…";
+    in property <string> setting-up-downloader: "Setting up downloader…";
+    in property <string> download-complete: "✓ Download complete";
+    in property <string> download-failed-prefix: "Download failed: ";
+    in property <string> settings-heading: "Settings";
+    in property <string> version-prefix: "Version ";
+    in property <string> library-heading: "Library";
+    in property <string> force-sync-description: "Force sync deletes the local hymn library and cache, then re-downloads and reindexes everything.";
+    in property <string> force-sync-button: "Force sync library";
+    in property <string> syncing-button: "Syncing…";
+    in property <string> language-heading: "Language";
+}
+
 global Theme {
     out property <color> bg: #0f172a;
     out property <color> rail: #111827;
@@ -69,7 +97,7 @@ component Sidebar inherits Rectangle {
         spacing: 6px;
         alignment: start;
         Text {
-            text: "SDA MANAGER";
+            text: I18n.app-title;
             color: Theme.accent-soft;
             font-size: 12px;
             font-weight: 700;
@@ -77,19 +105,19 @@ component Sidebar inherits Rectangle {
         }
         Rectangle { height: 8px; }
         NavItem {
-            label: "Library";
+            label: I18n.nav-library;
             icon: @image-url("../../../assets/icon-library.svg");
             selected: root.active-tab == 0;
             clicked => { root.active-tab = 0; }
         }
         NavItem {
-            label: "Video Downloader";
+            label: I18n.nav-downloader;
             icon: @image-url("../../../assets/icon-download.svg");
             selected: root.active-tab == 1;
             clicked => { root.active-tab = 1; }
         }
         NavItem {
-            label: "Settings";
+            label: I18n.nav-settings;
             icon: @image-url("../../../assets/icon-settings.svg");
             selected: root.active-tab == 2;
             clicked => { root.active-tab = 2; }
@@ -179,7 +207,7 @@ component LibraryPanel inherits Rectangle {
             Text { text: root.status; color: Theme.text-dim; }
 
             search := LineEdit {
-                placeholder-text: "Search by number, title, or lyrics…";
+                placeholder-text: I18n.search-placeholder;
                 edited(text) => { root.query-changed(text); }
                 accepted(text) => { root.open-current(); }
             }
@@ -219,11 +247,11 @@ component LibraryPanel inherits Rectangle {
                             alignment: start;
                             spacing: 8px;
                             Button {
-                                text: "‹ Prev";
+                                text: I18n.prev-slide;
                                 clicked => { root.prev-slide(); }
                             }
                             Button {
-                                text: "Next ›";
+                                text: I18n.next-slide;
                                 clicked => { root.next-slide(); }
                             }
                         }
@@ -234,11 +262,11 @@ component LibraryPanel inherits Rectangle {
                             alignment: start;
                             spacing: 8px;
                             Button {
-                                text: "Open in PowerPoint";
+                                text: I18n.open-in-powerpoint;
                                 clicked => { root.open-current(); }
                             }
                             Button {
-                                text: "Reveal in folder";
+                                text: I18n.reveal-in-folder;
                                 clicked => { root.reveal-current(); }
                             }
                         }
@@ -279,17 +307,17 @@ component DownloaderPanel inherits Rectangle {
         spacing: Theme.gap;
         alignment: start;
         Text {
-            text: "Video Downloader";
+            text: I18n.downloader-heading;
             color: Theme.text;
             font-size: 20px;
             font-weight: 700;
         }
         Text {
-            text: "Paste a YouTube link and choose where to save it.";
+            text: I18n.downloader-subtitle;
             color: Theme.text-dim;
         }
         LineEdit {
-            placeholder-text: "Paste a YouTube URL…";
+            placeholder-text: I18n.downloader-url-placeholder;
             text <=> root.url;
             enabled: !root.busy;
         }
@@ -312,7 +340,7 @@ component DownloaderPanel inherits Rectangle {
                 }
             }
             Button {
-                text: "Choose…";
+                text: I18n.choose;
                 enabled: !root.busy;
                 clicked => { root.choose-folder(); }
             }
@@ -338,7 +366,7 @@ component DownloaderPanel inherits Rectangle {
                     overflow: elide;
                 }
                 if root.state.status == "resolving": Text {
-                    text: "Setting up downloader…";
+                    text: I18n.setting-up-downloader;
                     color: Theme.text-dim;
                 }
                 if root.state.status == "downloading": Rectangle {
@@ -361,14 +389,14 @@ component DownloaderPanel inherits Rectangle {
                 if root.state.status == "done": HorizontalBox {
                     alignment: start;
                     spacing: 10px;
-                    Text { text: "✓ Download complete"; color: Theme.accent-soft; vertical-alignment: center; }
+                    Text { text: I18n.download-complete; color: Theme.accent-soft; vertical-alignment: center; }
                     Button {
-                        text: "Reveal in folder";
+                        text: I18n.reveal-in-folder;
                         clicked => { root.reveal-download(); }
                     }
                 }
                 if root.state.status == "failed": Text {
-                    text: "Download failed: " + root.state.message;
+                    text: I18n.download-failed-prefix + root.state.message;
                     color: Theme.danger;
                     wrap: word-wrap;
                 }
@@ -392,7 +420,7 @@ component SettingsPanel inherits Rectangle {
         alignment: start;
 
         Text {
-            text: "Settings";
+            text: I18n.settings-heading;
             color: Theme.text;
             font-size: 20px;
             font-weight: 700;
@@ -407,7 +435,7 @@ component SettingsPanel inherits Rectangle {
                 padding: 14px;
                 spacing: 6px;
                 Text {
-                    text: "Version " + root.app-version;
+                    text: I18n.version-prefix + root.app-version;
                     color: Theme.text;
                     font-weight: 600;
                 }
@@ -428,12 +456,12 @@ component SettingsPanel inherits Rectangle {
                 padding: 14px;
                 spacing: 8px;
                 Text {
-                    text: "Library";
+                    text: I18n.library-heading;
                     color: Theme.text;
                     font-weight: 600;
                 }
                 Text {
-                    text: "Force sync deletes the local hymn library and cache, then re-downloads and reindexes everything.";
+                    text: I18n.force-sync-description;
                     color: Theme.text-dim;
                     font-size: 12px;
                     wrap: word-wrap;
@@ -444,7 +472,7 @@ component SettingsPanel inherits Rectangle {
                     border-radius: Theme.radius;
                     background: root.syncing ? Theme.field : Theme.danger;
                     Text {
-                        text: root.syncing ? "Syncing…" : "Force sync library";
+                        text: root.syncing ? I18n.syncing-button : I18n.force-sync-button;
                         color: white;
                         vertical-alignment: center;
                         horizontal-alignment: center;
@@ -466,7 +494,7 @@ component SettingsPanel inherits Rectangle {
 }
 
 export component AppWindow inherits Window {
-    title: "SDA Manager";
+    title: I18n.app-title;
     // Live window/titlebar icon, embedded at compile time. Path is relative to
     // this .slint file. (The .exe file icon is set separately in build.rs.)
     icon: @image-url("../../../assets/icon.png");
