@@ -211,10 +211,11 @@ fn main() -> anyhow::Result<()> {
         debug!("query '{q}' -> {} hits", hits.len());
 
         // Build display rows and the row->entry-index map in one pass; entries
-        // stay in the searcher (no body cloning).
-        let mut rows: Vec<StandardListViewItem> = Vec::with_capacity(hits.len().min(200));
-        let mut map: Vec<usize> = Vec::with_capacity(hits.len().min(200));
-        for h in hits.iter().take(200) {
+        // stay in the searcher (no body cloning). Show every hit — StandardListView
+        // virtualizes rendering, so the full library scrolls without a row cap.
+        let mut rows: Vec<StandardListViewItem> = Vec::with_capacity(hits.len());
+        let mut map: Vec<usize> = Vec::with_capacity(hits.len());
+        for h in &hits {
             rows.push(StandardListViewItem::from(SharedString::from(row_label(h.entry))));
             map.push(h.index);
         }
