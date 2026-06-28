@@ -3,7 +3,8 @@
 #   irm https://raw.githubusercontent.com/AbelHristodor/sda_manager/main/install.ps1 | iex
 #
 # Downloads the latest released hymnal-gui.exe and installs it to
-# %LOCALAPPDATA%\Programs\hymnal-gui, adding that directory to the user PATH.
+# %LOCALAPPDATA%\Programs\hymnal-gui, adding that directory to the user PATH
+# and creating a Desktop shortcut.
 
 $ErrorActionPreference = "Stop"
 
@@ -27,10 +28,28 @@ try {
 }
 
 Expand-Archive -Path $zip -DestinationPath $tmp -Force
-Copy-Item (Join-Path $tmp "hymnal-gui-$target\hymnal-gui.exe") (Join-Path $installDir "hymnal-gui.exe") -Force
+$exePath = Join-Path $installDir "hymnal-gui.exe"
+Copy-Item (Join-Path $tmp "hymnal-gui-$target\hymnal-gui.exe") $exePath -Force
 Remove-Item -Recurse -Force $tmp
 
 Write-Host "Installed hymnal-gui.exe to $installDir"
+
+# Create a Desktop shortcut pointing at the installed exe. GetFolderPath resolves
+# a redirected Desktop (e.g. OneDrive) correctly; WScript.Shell ships with Windows.
+try {
+    $desktop  = [Environment]::GetFolderPath("Desktop")
+    $lnkPath  = Join-Path $desktop "SDA Manager.lnk"
+    $shell    = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($lnkPath)
+    $shortcut.TargetPath       = $exePath
+    $shortcut.WorkingDirectory = $installDir
+    $shortcut.IconLocation     = $exePath
+    $shortcut.Description       = "SDA Manager"
+    $shortcut.Save()
+    Write-Host "Created Desktop shortcut: $lnkPath"
+} catch {
+    Write-Warning "Could not create Desktop shortcut: $($_.Exception.Message)"
+}
 
 # Add to the user PATH if it isn't already there.
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
