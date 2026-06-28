@@ -410,7 +410,9 @@ component SettingsPanel inherits Rectangle {
     in property <string> update-status;
     in property <string> sync-status;
     in property <bool> syncing;
+    in property <string> active-language;   // "en"/"it"/"ro"
     callback force-sync();
+    callback set-language(string);
 
     background: Theme.bg;
 
@@ -490,6 +492,45 @@ component SettingsPanel inherits Rectangle {
                 }
             }
         }
+
+        Rectangle {
+            background: Theme.panel;
+            border-radius: Theme.radius;
+            border-width: 1px;
+            border-color: Theme.panel-border;
+            VerticalBox {
+                padding: 14px;
+                spacing: 8px;
+                Text {
+                    text: I18n.language-heading;
+                    color: Theme.text;
+                    font-weight: 600;
+                }
+                HorizontalBox {
+                    spacing: 8px;
+                    alignment: start;
+                    for lang in [
+                        { code: "en", label: "English" },
+                        { code: "it", label: "Italiano" },
+                        { code: "ro", label: "Română" },
+                    ]: Rectangle {
+                        height: 34px;
+                        width: 110px;
+                        border-radius: Theme.radius;
+                        background: root.active-language == lang.code ? Theme.accent : Theme.field;
+                        Text {
+                            text: lang.label;
+                            color: white;
+                            vertical-alignment: center;
+                            horizontal-alignment: center;
+                        }
+                        TouchArea {
+                            clicked => { root.set-language(lang.code); }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -542,7 +583,9 @@ export component AppWindow inherits Window {
     in property <string> update-status;
     in property <string> sync-status;
     in property <bool> syncing;
+    in property <string> active-language;
     callback force-sync();
+    callback set-language(string);
 
     HorizontalBox {
         padding: 0;
@@ -579,7 +622,9 @@ export component AppWindow inherits Window {
             update-status: root.update-status;
             sync-status: root.sync-status;
             syncing: root.syncing;
+            active-language: root.active-language;
             force-sync => { root.force-sync(); }
+            set-language(code) => { root.set-language(code); }
         }
     }
 }
