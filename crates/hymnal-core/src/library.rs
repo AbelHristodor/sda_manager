@@ -109,6 +109,12 @@ pub fn index_cache_path() -> Option<std::path::PathBuf> {
         .map(|d| d.cache_dir().join("index.bin"))
 }
 
+/// Directory holding user theme JSON files (one per theme).
+pub fn themes_dir() -> Option<std::path::PathBuf> {
+    directories::ProjectDirs::from("org", "hymnal", "HymnFinder")
+        .map(|d| d.config_dir().join("themes"))
+}
+
 /// Resolve the effective download directory: the configured one, or the OS
 /// Downloads folder, or the home dir as a last resort.
 pub fn downloads_dir(cfg: &Config) -> std::path::PathBuf {

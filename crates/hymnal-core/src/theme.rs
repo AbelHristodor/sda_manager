@@ -172,3 +172,73 @@ impl Theme {
         self.name == "Default"
     }
 }
+
+/// Named-file persistence for themes. One `<name>.json` per theme in a
+/// directory; the built-in `Default` is always present and never written or
+/// deleted on disk.
+pub mod store {
+    use super::Theme;
+    use anyhow::{bail, Result};
+    use std::path::Path;
+
+    /// Sanitize a theme name into a safe file stem (alphanumerics, space, -, _).
+    fn file_stem(name: &str) -> String {
+        name.chars()
+            .map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' { c } else { '_' })
+            .collect()
+    }
+
+    /// List all themes: the built-in default first, then every valid
+    /// `<dir>/*.json`. Corrupt files are skipped (logged via eprintln).
+    pub fn list_themes(dir: &Path) -> Vec<Theme> {
+        let mut out = vec![Theme::default()];
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                    continue;
+                }
+                match std::fs::read_to_string(&path).ok().and_then(|s| Theme::from_json(&s).ok()) {
+                    Some(t) if !t.is_builtin_default() => out.push(t),
+                    Some(_) => {}
+                    None => eprintln!("skip corrupt theme {}", path.display()),
+                }
+            }
+        }
+        out
+    }
+
+    /// Load one theme by name. Returns the built-in default for "Default".
+    pub fn load_theme(dir: &Path, name: &str) -> Result<Theme> {
+        if name == "Default" {
+            return Ok(Theme::default());
+        }
+        let path = dir.join(format!("{}.json", file_stem(name)));
+        let text = std::fs::read_to_string(&path)?;
+        Theme::from_json(&text)
+    }
+
+    /// Save a theme to `<dir>/<name>.json`. Refuses to overwrite the built-in
+    /// default's reserved name.
+    pub fn save_theme(dir: &Path, theme: &Theme) -> Result<()> {
+        if theme.is_builtin_default() {
+            bail!("the built-in Default theme cannot be saved over");
+        }
+        std::fs::create_dir_all(dir)?;
+        let path = dir.join(format!("{}.json", file_stem(&theme.name)));
+        std::fs::write(path, theme.to_json()?)?;
+        Ok(())
+    }
+
+    /// Delete a theme file. Refuses to delete the built-in default.
+    pub fn delete_theme(dir: &Path, name: &str) -> Result<()> {
+        if name == "Default" {
+            bail!("the built-in Default theme cannot be deleted");
+        }
+        let path = dir.join(format!("{}.json", file_stem(name)));
+        if path.exists() {
+            std::fs::remove_file(path)?;
+        }
+        Ok(())
+    }
+}
