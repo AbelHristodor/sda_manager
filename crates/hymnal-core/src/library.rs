@@ -102,6 +102,24 @@ pub fn downloads_dir(cfg: &Config) -> std::path::PathBuf {
         .unwrap_or_else(|| std::path::PathBuf::from("."))
 }
 
+/// Whether a library folder is currently reachable on disk. Used for the
+/// Settings "unavailable" marker; an unreachable folder is simply skipped at
+/// index time (the crawl yields nothing) rather than being an error.
+pub fn library_available(path: &str) -> bool {
+    std::path::Path::new(path).is_dir()
+}
+
+/// Set the `enabled` flag of the library whose `path` matches. Works on any
+/// library, including the default — the default may be disabled (just not
+/// removed). No-op if no library has that path.
+pub fn set_library_enabled(cfg: &mut Config, path: &str, enabled: bool) {
+    for lib in cfg.libraries.iter_mut() {
+        if lib.path == path {
+            lib.enabled = enabled;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -160,5 +178,46 @@ mod tests {
     fn config_download_dir_defaults_to_none() {
         let cfg = Config::default();
         assert_eq!(cfg.download_dir, None);
+    }
+
+    #[test]
+    fn library_available_true_for_existing_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(library_available(&dir.path().to_string_lossy()));
+    }
+
+    #[test]
+    fn library_available_false_for_missing_dir() {
+        assert!(!library_available("/no/such/path/hopefully/12345"));
+    }
+
+    #[test]
+    fn set_library_enabled_flips_flag() {
+        let mut cfg = Config {
+            default_repo_url: "x".into(),
+            libraries: vec![Library {
+                name: "U".into(), path: "/tmp/u".into(), enabled: true, managed_by_git: false,
+            }],
+            download_dir: None,
+            language: None,
+        };
+        set_library_enabled(&mut cfg, "/tmp/u", false);
+        assert!(!cfg.libraries[0].enabled);
+        set_library_enabled(&mut cfg, "/tmp/u", true);
+        assert!(cfg.libraries[0].enabled);
+    }
+
+    #[test]
+    fn set_library_enabled_can_disable_default() {
+        let mut cfg = Config {
+            default_repo_url: "x".into(),
+            libraries: vec![Library {
+                name: "Default".into(), path: "/data/default".into(), enabled: true, managed_by_git: true,
+            }],
+            download_dir: None,
+            language: None,
+        };
+        set_library_enabled(&mut cfg, "/data/default", false);
+        assert!(!cfg.libraries[0].enabled);
     }
 }
