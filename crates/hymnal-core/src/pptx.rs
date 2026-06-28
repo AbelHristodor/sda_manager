@@ -7,7 +7,7 @@ use zip::ZipArchive;
 
 /// Raw text extracted from a single .pptx, before it becomes a HymnEntry.
 pub struct ParsedPptx {
-    pub number: Option<u32>,
+    pub number: Option<String>,
     pub title: String,
     pub body: String,
     /// Text of each slide (paragraphs joined by `\n`), in presentation order.
@@ -24,14 +24,7 @@ pub fn extract(path: &Path) -> Result<ParsedPptx> {
     let number = path
         .file_stem()
         .and_then(|s| s.to_str())
-        .and_then(|s| s.trim_start_matches('0').parse::<u32>().ok())
-        .or_else(|| {
-            // stem like "000" trims to "" — treat as 0 only if all zeros
-            path.file_stem()
-                .and_then(|s| s.to_str())
-                .filter(|s| s.chars().all(|c| c == '0'))
-                .map(|_| 0)
-        });
+        .map(hymn_number_from_stem);
 
     let file = std::fs::File::open(path)
         .with_context(|| format!("open {}", path.display()))?;
@@ -63,6 +56,23 @@ pub fn extract(path: &Path) -> Result<ParsedPptx> {
     let title = pick_title(&first_slide_lines);
     let body = slides.join("\n");
     Ok(ParsedPptx { number, title, body, slides })
+}
+
+/// Derive the hymn number from a filename stem, preserving an optional letter
+/// suffix: "001" -> "1", "150" -> "150", "664b" -> "664b", "000" -> "0".
+/// The numeric portion has leading zeros trimmed; any trailing non-digit suffix
+/// (e.g. "b") is kept verbatim.
+fn hymn_number_from_stem(stem: &str) -> String {
+    let digits: String = stem.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let suffix: &str = &stem[digits.len()..];
+    let number = digits.trim_start_matches('0');
+    // "000" trims to "" — fall back to "0" so an all-zero stem still has a value.
+    let number = if number.is_empty() && !digits.is_empty() {
+        "0"
+    } else {
+        number
+    };
+    format!("{number}{suffix}")
 }
 
 /// Numeric slide index from "ppt/slides/slide12.xml" -> 12.

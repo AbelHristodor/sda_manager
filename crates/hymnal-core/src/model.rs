@@ -4,8 +4,9 @@ use std::path::PathBuf;
 /// One hymn extracted from a .pptx file.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HymnEntry {
-    /// Hymn number parsed from the filename stem (authoritative), e.g. 150.
-    pub number: Option<u32>,
+    /// Hymn number parsed from the filename stem (authoritative), e.g. "150"
+    /// or "664b" (some hymns have a letter suffix). `None` if unparseable.
+    pub number: Option<String>,
     /// Title line (first meaningful text on the title slide).
     pub title: String,
     /// Concatenated verse text from all slides, for full-text search.

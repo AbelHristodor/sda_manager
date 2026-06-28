@@ -55,7 +55,7 @@ pub fn build_index(root: &Path, library: &str) -> Vec<HymnEntry> {
 /// changes in a way that makes previously-cached entries stale (e.g. improved
 /// title extraction). A mismatch makes `load_cache` return `None`, forcing a
 /// full re-parse even though the underlying .pptx mtimes are unchanged.
-pub const CACHE_VERSION: u32 = 5;
+pub const CACHE_VERSION: u32 = 6;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct CacheFile {

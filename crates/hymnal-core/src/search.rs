@@ -17,6 +17,21 @@ pub struct Searcher {
     items: Vec<Indexed>,
 }
 
+/// Sort key for a hymn number that orders numerically with a letter suffix as
+/// the tiebreaker: "664" < "664a" < "664b" < "665". Numbers come before any
+/// non-numeric/`None` value. Returns `(numeric, suffix)`; unparseable or `None`
+/// sort last via `u32::MAX`.
+fn number_sort_key(number: Option<&str>) -> (u32, String) {
+    match number {
+        Some(s) => {
+            let digits: String = s.chars().take_while(|c| c.is_ascii_digit()).collect();
+            let suffix = s[digits.len()..].to_string();
+            (digits.parse::<u32>().unwrap_or(u32::MAX), suffix)
+        }
+        None => (u32::MAX, String::new()),
+    }
+}
+
 impl Searcher {
     pub fn new(entries: Vec<HymnEntry>) -> Self {
         let items = entries
@@ -29,7 +44,7 @@ impl Searcher {
                     .unwrap_or("")
                     .to_string();
                 Indexed {
-                    number_str: entry.number.map(|n| n.to_string()).unwrap_or_default(),
+                    number_str: entry.number.clone().unwrap_or_default(),
                     title_folded: fold(&entry.title),
                     filename_folded: fold(&filename),
                     body_folded: fold(&entry.body),
@@ -74,7 +89,10 @@ impl Searcher {
                     field: MatchField::Number,
                 })
                 .collect();
-            all.sort_by_key(|h| h.entry.number.unwrap_or(u32::MAX));
+            all.sort_by(|a, b| {
+                number_sort_key(a.entry.number.as_deref())
+                    .cmp(&number_sort_key(b.entry.number.as_deref()))
+            });
             return all;
         }
 

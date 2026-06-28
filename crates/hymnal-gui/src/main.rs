@@ -1,3 +1,8 @@
+// On Windows, don't allocate a console window for this GUI app. Only affects
+// release builds (debug keeps the console so `RUST_LOG` output is visible);
+// no-op on macOS/Linux.
+#![windows_subsystem = "windows"]
+
 slint::include_modules!();
 
 use hymnal_core::downloader::{self, DownloadEvent};
@@ -13,6 +18,7 @@ use std::sync::mpsc;
 fn row_label(entry: &HymnEntry) -> String {
     let number = entry
         .number
+        .as_deref()
         .map(|n| format!("{n}  "))
         .unwrap_or_default();
     format!("{number}{}  · {}", entry.title, entry.library)
@@ -23,7 +29,7 @@ fn row_label(entry: &HymnEntry) -> String {
 /// count, index, and the bottom status bar string.
 fn show_slide(
     ui: &AppWindow,
-    number: Option<u32>,
+    number: Option<&str>,
     title: &str,
     slides: &[String],
     idx: i32,
@@ -251,7 +257,7 @@ fn main() -> anyhow::Result<()> {
             .and_then(|&ei| s.entry(ei));
         if let Some(entry) = entry {
             debug!("preview #{:?} {} ({} slides)", entry.number, entry.title, entry.slides.len());
-            show_slide(&ui, entry.number, &entry.title, &entry.slides, 0);
+            show_slide(&ui, entry.number.as_deref(), &entry.title, &entry.slides, 0);
         }
     });
 
@@ -269,7 +275,7 @@ fn main() -> anyhow::Result<()> {
         let Some(s) = guard.as_ref() else { return };
         let entry = rows_for_prev.borrow().get(row as usize).and_then(|&ei| s.entry(ei));
         if let Some(entry) = entry {
-            show_slide(&ui, entry.number, &entry.title, &entry.slides, ui.get_slide_index() - 1);
+            show_slide(&ui, entry.number.as_deref(), &entry.title, &entry.slides, ui.get_slide_index() - 1);
         }
     });
 
@@ -286,7 +292,7 @@ fn main() -> anyhow::Result<()> {
         let Some(s) = guard.as_ref() else { return };
         let entry = rows_for_next.borrow().get(row as usize).and_then(|&ei| s.entry(ei));
         if let Some(entry) = entry {
-            show_slide(&ui, entry.number, &entry.title, &entry.slides, ui.get_slide_index() + 1);
+            show_slide(&ui, entry.number.as_deref(), &entry.title, &entry.slides, ui.get_slide_index() + 1);
         }
     });
 

@@ -7,7 +7,7 @@ fn extracts_number_title_and_body() {
     let parsed = extract(path).expect("should parse");
 
     // Number comes from the filename stem.
-    assert_eq!(parsed.number, Some(1));
+    assert_eq!(parsed.number.as_deref(), Some("1"));
     // Title is the first meaningful line of the title slide.
     assert!(parsed.title.contains("Plecaţi-vă lui Dumnezeu"));
     // Body contains verse text from later slides.
@@ -19,8 +19,17 @@ fn extracts_number_title_and_body() {
 #[test]
 fn number_from_three_digit_filename() {
     let parsed = extract(Path::new("tests/fixtures/150.pptx")).unwrap();
-    assert_eq!(parsed.number, Some(150));
+    assert_eq!(parsed.number.as_deref(), Some("150"));
     assert!(parsed.title.contains("Cerul, pământul"));
+}
+
+#[test]
+fn number_supports_letter_suffix() {
+    // Hymns like 664a / 664b have a trailing letter on the filename stem; the
+    // number must be preserved verbatim, not dropped.
+    let parsed = extract(Path::new("tests/fixtures/664b.pptx")).unwrap();
+    assert_eq!(parsed.number.as_deref(), Some("664b"));
+    assert!(parsed.title.contains("aducem"));
 }
 
 #[test]
@@ -29,7 +38,7 @@ fn title_joins_runs_split_within_a_paragraph() {
     // "Ca un " + "cerb" + " setos de " + "ape". The parser must join runs
     // within a paragraph so the full title survives, not just "Ca un".
     let parsed = extract(Path::new("tests/fixtures/356.pptx")).unwrap();
-    assert_eq!(parsed.number, Some(356));
+    assert_eq!(parsed.number.as_deref(), Some("356"));
     assert_eq!(parsed.title, "Ca un cerb setos de ape");
     assert!(!parsed.title.starts_with("Imnul"));
 }

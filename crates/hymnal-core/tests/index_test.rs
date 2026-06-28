@@ -14,7 +14,7 @@ fn crawl_skips_lock_and_non_pptx_files() {
 #[test]
 fn build_index_parses_fixtures() {
     let entries = build_index(Path::new("tests/fixtures"), "test-lib");
-    let one = entries.iter().find(|e| e.number == Some(1)).unwrap();
+    let one = entries.iter().find(|e| e.number.as_deref() == Some("1")).unwrap();
     assert!(one.title.contains("Plecaţi-vă"));
     assert_eq!(one.library, "test-lib");
 }
@@ -28,7 +28,7 @@ fn cache_round_trips() {
     let dir = tempfile::tempdir().unwrap();
     let cache = dir.path().join("index.bin");
     let entries = vec![HymnEntry {
-        number: Some(7),
+        number: Some("7".into()),
         title: "T".into(),
         body: "B".into(),
         slides: vec![],
@@ -58,7 +58,7 @@ fn cache_with_wrong_version_is_ignored() {
     let cache = dir.path().join("index.bin");
     // Write raw entries WITHOUT the version envelope (the pre-versioning format).
     let legacy = vec![HymnEntry {
-        number: Some(1),
+        number: Some("1".into()),
         title: "stale".into(),
         body: "b".into(),
         slides: vec![],
