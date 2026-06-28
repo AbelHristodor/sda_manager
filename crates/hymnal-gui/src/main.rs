@@ -6,6 +6,7 @@
 slint::include_modules!();
 
 mod projector;
+mod fonts;
 
 use hymnal_core::downloader::{self, DownloadEvent};
 use hymnal_core::i18n::{Language, Strings};

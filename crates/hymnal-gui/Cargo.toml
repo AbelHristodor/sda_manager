@@ -17,6 +17,11 @@ sys-locale = "0.3"
 anyhow = { workspace = true }
 log = "0.4"
 env_logger = "0.11"
+font-kit = { version = "0.14", optional = true }
+
+[features]
+default = ["system-fonts"]
+system-fonts = ["dep:font-kit"]
 
 [build-dependencies]
 slint-build = "1.8"
