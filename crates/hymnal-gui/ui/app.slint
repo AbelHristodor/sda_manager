@@ -884,8 +884,6 @@ component ControlPanel inherits Rectangle {
     in property <string> slide-pos;
     in property <bool> projecting;
     in property <bool> blank;
-    in property <[string]> theme-names;
-    in-out property <int> ctl-theme-index;
     in property <[string]> display-names;
     in-out property <int> display-index;
     in property <[StandardListViewItem]> search-results;
@@ -895,7 +893,6 @@ component ControlPanel inherits Rectangle {
     callback blank-toggle();
     callback prev();
     callback next();
-    callback theme-picked(int);
     callback display-picked(int);
     callback search-changed(string);
     callback search-activated(int);
@@ -912,17 +909,20 @@ component ControlPanel inherits Rectangle {
             return reject;
         }
         VerticalBox {
-            padding: 14px; spacing: 10px;
-            HorizontalBox {
-                Text { text: I18n.control-theme + ":"; color: Theme.text-dim; vertical-alignment: center; }
-                ComboBox { model: root.theme-names; current-index <=> root.ctl-theme-index;
-                    selected => { root.theme-picked(self.current-index); } }
-                Text { text: I18n.control-output + ":"; color: Theme.text-dim; vertical-alignment: center; }
-                ComboBox { model: root.display-names; current-index <=> root.display-index;
-                    selected => { root.display-picked(self.current-index); } }
-                Button { text: root.projecting ? I18n.control-stop : I18n.control-start;
-                    clicked => { if (root.projecting) { root.stop(); } else { root.start(); } } }
-                Button { text: I18n.control-blank; clicked => { root.blank-toggle(); } }
+            padding: 14px; spacing: 12px;
+            Rectangle {
+                background: Theme.panel; border-radius: Theme.radius;
+                border-width: 1px; border-color: Theme.panel-border;
+                HorizontalBox {
+                    padding: 8px; spacing: 10px; alignment: LayoutAlignment.start;
+                    Text { text: I18n.control-output + ":"; color: Theme.text-dim; vertical-alignment: center; }
+                    ComboBox { model: root.display-names; current-index <=> root.display-index;
+                        selected => { root.display-picked(self.current-index); } }
+                    Rectangle { horizontal-stretch: 1; }
+                    PrimaryButton { text: root.projecting ? I18n.control-stop : I18n.control-start;
+                        clicked => { if (root.projecting) { root.stop(); } else { root.start(); } } }
+                    SecondaryButton { text: I18n.control-blank; clicked => { root.blank-toggle(); } }
+                }
             }
             LineEdit {
                 placeholder-text: I18n.search-placeholder;
@@ -930,27 +930,42 @@ component ControlPanel inherits Rectangle {
                 accepted(t) => { root.search-activated(root.search-current); }
             }
             HorizontalBox {
+                spacing: 14px;
                 StandardListView {
-                    width: 38%;
+                    width: 40%;
                     model: root.search-results;
                     current-item <=> root.search-current;
                     current-item-changed(i) => { root.search-activated(i); }
                 }
                 VerticalBox {
+                    alignment: LayoutAlignment.start; spacing: 8px;
                     Text { text: root.current-title; color: Theme.accent-soft; font-weight: 700; }
-                    Text { text: I18n.control-live + "  " + root.slide-pos; color: Theme.text-dim; font-size: 11px; }
-                    Rectangle { height: 120px; background: #0b1f3a; border-radius: Theme.radius;
+                    HorizontalBox {
+                        max-width: 300px;
+                        Text { text: I18n.control-live; color: Theme.text-dim; font-size: 11px; }
+                        Rectangle { horizontal-stretch: 1; }
+                        Text { text: root.slide-pos; color: Theme.text-dim; font-size: 11px; }
+                    }
+                    Rectangle {
+                        width: 300px; height: 169px; background: #0b1f3a;
+                        border-radius: Theme.radius; border-width: 1px; border-color: Theme.panel-border;
                         Text { text: root.blank ? "" : root.live-text; color: white; font-weight: 700;
                             horizontal-alignment: center; vertical-alignment: center;
-                            width: parent.width - 24px; x: 12px; wrap: word-wrap; } }
+                            width: parent.width - 24px; x: 12px; wrap: word-wrap; }
+                    }
                     Text { text: I18n.control-next-label; color: Theme.text-dim; font-size: 11px; }
-                    Rectangle { height: 70px; background: #0b1f3a; border-radius: Theme.radius;
+                    Rectangle {
+                        width: 300px; height: 90px; background: #0b1f3a;
+                        border-radius: Theme.radius; border-width: 1px; border-color: Theme.panel-border;
                         Text { text: root.next-text; color: #cbd5e1;
                             horizontal-alignment: center; vertical-alignment: center;
-                            width: parent.width - 24px; x: 12px; wrap: word-wrap; } }
-                    HorizontalBox { alignment: center;
-                        Button { text: I18n.control-prev; clicked => { root.prev(); } }
-                        Button { text: I18n.control-next; clicked => { root.next(); } } }
+                            width: parent.width - 24px; x: 12px; wrap: word-wrap; }
+                    }
+                    HorizontalBox {
+                        max-width: 300px; spacing: 8px; alignment: center;
+                        SecondaryButton { text: I18n.control-prev; clicked => { root.prev(); } }
+                        PrimaryButton { text: I18n.control-next; clicked => { root.next(); } }
+                    }
                 }
             }
         }
@@ -1057,10 +1072,8 @@ export component AppWindow inherits Window {
     in property <string> ctl-pos;
     in property <bool> ctl-projecting;
     in property <bool> ctl-blank;
-    in property <[string]> ctl-theme-names;
     in property <[string]> display-names;
     in-out property <int> display-index;
-    in-out property <int> ctl-theme-index;
     in property <[StandardListViewItem]> ctl-search-results;
     in-out property <int> ctl-search-current;
     callback ctl-start();
@@ -1068,7 +1081,6 @@ export component AppWindow inherits Window {
     callback ctl-blank-toggle();
     callback ctl-prev();
     callback ctl-go-next();
-    callback ctl-theme-picked(int);
     callback ctl-display-picked(int);
     callback ctl-search-changed(string);
     callback ctl-search-activated(int);
@@ -1126,8 +1138,6 @@ export component AppWindow inherits Window {
             slide-pos: root.ctl-pos;
             projecting: root.ctl-projecting;
             blank: root.ctl-blank;
-            theme-names: root.ctl-theme-names;
-            ctl-theme-index <=> root.ctl-theme-index;
             display-names: root.display-names;
             display-index <=> root.display-index;
             search-results: root.ctl-search-results;
@@ -1137,7 +1147,6 @@ export component AppWindow inherits Window {
             blank-toggle => { root.ctl-blank-toggle(); }
             prev => { root.ctl-prev(); }
             next => { root.ctl-go-next(); }
-            theme-picked(i) => { root.ctl-theme-picked(i); }
             display-picked(i) => { root.ctl-display-picked(i); }
             search-changed(t) => { root.ctl-search-changed(t); }
             search-activated(i) => { root.ctl-search-activated(i); }
