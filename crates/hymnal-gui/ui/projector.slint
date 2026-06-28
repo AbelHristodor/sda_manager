@@ -1,0 +1,36 @@
+// A standalone full-screen window that renders ONE slide styled by flattened
+// theme properties. The Rust side flattens a hymnal_core::theme::Theme into
+// these properties whenever the theme or current slide changes.
+export component ProjectorWindow inherits Window {
+    title: "Projector";
+    background: root.bg-color;
+
+    // Flattened theme + current slide (set from Rust).
+    in property <string> slide-text;
+    in property <bool> blank;
+    in property <color> bg-color;
+    in property <color> text-color;
+    in property <string> font-family;
+    in property <length> font-size;
+    in property <int> font-weight;
+    in property <length> margin: 48px;
+    in property <string> h-align: "center"; // "left"|"center"|"right"
+
+    Rectangle {
+        background: root.bg-color;
+        if !root.blank: Text {
+            text: root.slide-text;
+            color: root.text-color;
+            font-family: root.font-family;
+            font-size: root.font-size;
+            font-weight: root.font-weight;
+            wrap: word-wrap;
+            horizontal-alignment: root.h-align == "left" ? TextHorizontalAlignment.left
+                : root.h-align == "right" ? TextHorizontalAlignment.right
+                : TextHorizontalAlignment.center;
+            vertical-alignment: center;
+            width: parent.width - root.margin * 2;
+            x: root.margin;
+        }
+    }
+}

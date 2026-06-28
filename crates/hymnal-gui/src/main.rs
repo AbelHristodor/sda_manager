@@ -67,6 +67,35 @@ fn row_label(entry: &HymnEntry) -> String {
     format!("{number}{}  · {}", entry.title, entry.library)
 }
 
+use hymnal_core::theme::{Background, HAlign, Theme};
+
+/// Convert a core Rgba to a Slint Color.
+fn to_color(c: hymnal_core::theme::Rgba) -> slint::Color {
+    slint::Color::from_argb_u8(c.a, c.r, c.g, c.b)
+}
+
+/// Push a theme + slide text onto a ProjectorWindow's flattened properties.
+fn apply_theme_to_projector(p: &ProjectorWindow, theme: &Theme, slide: &str, blank: bool) {
+    p.set_slide_text(slide.into());
+    p.set_blank(blank);
+    p.set_text_color(to_color(theme.text.color));
+    p.set_font_family(theme.text.font_family.clone().into());
+    p.set_font_size(theme.text.font_size_pt.unwrap_or(44.0));
+    p.set_font_weight(theme.text.font_weight as i32);
+    p.set_margin(theme.layout.margin);
+    p.set_h_align(match theme.text.h_align {
+        HAlign::Left => "left",
+        HAlign::Center => "center",
+        HAlign::Right => "right",
+    }.into());
+    let bg = match &theme.background.kind {
+        Background::Solid { color } => to_color(*color),
+        Background::Gradient { from, .. } => to_color(*from),
+        Background::Image { .. } => to_color(theme.text.color), // placeholder; image bg is a later task
+    };
+    p.set_bg_color(bg);
+}
+
 /// Build the Slint `LibraryRow` model from the config, ensuring the default
 /// git-managed library appears even if it isn't yet written to the config on
 /// disk (mirrors refresh::register_default_library's "add if no managed entry").

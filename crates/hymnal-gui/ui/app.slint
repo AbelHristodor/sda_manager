@@ -1,4 +1,5 @@
 import { LineEdit, StandardListView, Button, ScrollView, VerticalBox, HorizontalBox } from "std-widgets.slint";
+import { ProjectorWindow } from "projector.slint";
 
 export struct DownloadState {
     // "" idle | "resolving" | "downloading" | "done" | "failed"
@@ -722,3 +723,5 @@ export component AppWindow inherits Window {
         }
     }
 }
+
+export { ProjectorWindow }
