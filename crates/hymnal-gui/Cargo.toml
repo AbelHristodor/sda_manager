@@ -12,6 +12,7 @@ hymnal-core = { path = "../hymnal-core" }
 slint = "1.8"
 open = "5"
 rfd = "0.14"
+sys-locale = "0.3"
 anyhow = { workspace = true }
 log = "0.4"
 env_logger = "0.11"
