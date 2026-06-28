@@ -362,15 +362,6 @@ fn main() -> anyhow::Result<()> {
             .collect();
         ui.set_display_names(slint::ModelRc::from(Rc::new(slint::VecModel::from(rows))));
     }
-    // Populate the Control theme ComboBox (plain strings) from the themes list.
-    {
-        let names: Vec<slint::SharedString> = themes
-            .borrow()
-            .iter()
-            .map(|t| slint::SharedString::from(t.name.clone()))
-            .collect();
-        ui.set_ctl_theme_names(slint::ModelRc::from(Rc::new(slint::VecModel::from(names))));
-    }
 
     // Channel carrying download events from the worker thread to the UI thread.
     let (dl_tx, dl_rx) = mpsc::channel::<DownloadEvent>();
@@ -1140,26 +1131,6 @@ fn main() -> anyhow::Result<()> {
             present.borrow_mut().toggle_blank();
             refresh_control_view(&ui, &present.borrow());
             push_to_projector(&projector, &active_theme.borrow(), &present.borrow());
-        });
-    }
-    // Theme picked (Control ComboBox): set active, persist, push.
-    {
-        let themes = themes.clone();
-        let active_theme = active_theme.clone();
-        let projector = projector.clone();
-        let present = present.clone();
-        let weak = ui.as_weak();
-        ui.on_ctl_theme_picked(move |i| {
-            let _ = weak.upgrade();
-            if let Some(t) = themes.borrow().get(i.max(0) as usize).cloned() {
-                *active_theme.borrow_mut() = t.clone();
-                push_to_projector(&projector, &active_theme.borrow(), &present.borrow());
-                if let Some(p) = hymnal_core::library::config_path() {
-                    let mut cfg = Config::load(&p).unwrap_or_default();
-                    cfg.active_theme = Some(t.name.clone());
-                    let _ = cfg.save(&p);
-                }
-            }
         });
     }
     // Display picked: persist.
