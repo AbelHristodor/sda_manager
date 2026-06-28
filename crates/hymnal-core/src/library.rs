@@ -27,6 +27,10 @@ pub struct Config {
     /// User's chosen download folder. `None` => OS Downloads directory.
     #[serde(default)]
     pub download_dir: Option<String>,
+    /// Selected UI language code ("en"/"it"/"ro"). `None` => not yet chosen
+    /// (detect from OS locale on first run).
+    #[serde(default)]
+    pub language: Option<String>,
 }
 
 impl Default for Config {
@@ -35,6 +39,7 @@ impl Default for Config {
             default_repo_url: DEFAULT_REPO_URL.to_string(),
             libraries: Vec::new(),
             download_dir: None,
+            language: None,
         }
     }
 }
@@ -112,6 +117,7 @@ mod tests {
                 managed_by_git: true,
             }],
             download_dir: None,
+            language: None,
         };
         let text = cfg.to_toml().unwrap();
         let back = Config::from_toml(&text).unwrap();
@@ -132,9 +138,22 @@ mod tests {
             default_repo_url: "https://example.com/hymns.git".into(),
             libraries: vec![],
             download_dir: Some("/home/user/Videos".into()),
+            language: None,
         };
         let back = Config::from_toml(&cfg.to_toml().unwrap()).unwrap();
         assert_eq!(back.download_dir, Some("/home/user/Videos".into()));
+    }
+
+    #[test]
+    fn config_persists_language() {
+        let cfg = Config {
+            default_repo_url: "https://example.com/hymns.git".into(),
+            libraries: vec![],
+            download_dir: None,
+            language: Some("ro".into()),
+        };
+        let back = Config::from_toml(&cfg.to_toml().unwrap()).unwrap();
+        assert_eq!(back.language, Some("ro".into()));
     }
 
     #[test]
