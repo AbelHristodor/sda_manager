@@ -803,72 +803,80 @@ component ThemesPanel inherits Rectangle {
         }
         VerticalBox {
             spacing: 14px;
-            HorizontalBox {
-                alignment: center;
-                Rectangle {
-                    width: 340px; height: 150px; border-radius: Theme.radius;
-                    border-width: 1px; border-color: Theme.panel-border; clip: true;
-                    Rectangle {
-                        background: root.edit-bg-color;
-                        Text {
-                            text: I18n.theme-preview-sample;
-                            color: root.edit-text-color;
-                            font-family: root.font-families[root.edit-font-index];
-                            font-size: root.edit-font-size * 1px;
-                            horizontal-alignment: root.edit-h-align == "left" ? TextHorizontalAlignment.left
-                                : root.edit-h-align == "right" ? TextHorizontalAlignment.right
-                                : TextHorizontalAlignment.center;
-                            vertical-alignment: center;
-                            width: parent.width - 24px; x: 12px; wrap: word-wrap;
+            // Preview + form scroll if they exceed the window height, so the
+            // Save footer below always stays visible (the window is fixed-size).
+            ScrollView {
+                vertical-stretch: 1;
+                VerticalBox {
+                    spacing: 14px;
+                    HorizontalBox {
+                        alignment: center;
+                        Rectangle {
+                            width: 340px; height: 150px; border-radius: Theme.radius;
+                            border-width: 1px; border-color: Theme.panel-border; clip: true;
+                            Rectangle {
+                                background: root.edit-bg-color;
+                                Text {
+                                    text: I18n.theme-preview-sample;
+                                    color: root.edit-text-color;
+                                    font-family: root.font-families[root.edit-font-index];
+                                    font-size: root.edit-font-size * 1px;
+                                    horizontal-alignment: root.edit-h-align == "left" ? TextHorizontalAlignment.left
+                                        : root.edit-h-align == "right" ? TextHorizontalAlignment.right
+                                        : TextHorizontalAlignment.center;
+                                    vertical-alignment: center;
+                                    width: parent.width - 24px; x: 12px; wrap: word-wrap;
+                                }
+                            }
+                        }
+                    }
+                    HorizontalBox {
+                        spacing: 24px;
+                        VerticalBox {
+                            spacing: 10px;
+                            Text { text: I18n.theme-name-label; color: Theme.text-dim; font-size: 11px; }
+                            LineEdit { text <=> root.edit-name; }
+                            Text { text: I18n.theme-font-label; color: Theme.text-dim; font-size: 11px; }
+                            ComboBox { model: root.font-families; current-index <=> root.edit-font-index;
+                                selected => { root.font-picked(self.current-index); } }
+                            Text { text: I18n.theme-weight-label; color: Theme.text-dim; font-size: 11px; }
+                            ComboBox { model: root.weight-options; current-index <=> root.edit-weight-index;
+                                selected => { root.weight-picked(self.current-index); } }
+                            Text { text: I18n.theme-size-label; color: Theme.text-dim; font-size: 11px; }
+                            HorizontalBox {
+                                spacing: 8px;
+                                Slider { minimum: 12; maximum: 120; value: root.edit-font-size;
+                                    changed(v) => { root.size-changed(v); } }
+                                Text { text: Math.round(root.edit-font-size); color: Theme.text;
+                                    vertical-alignment: center; width: 30px; }
+                            }
+                        }
+                        VerticalBox {
+                            spacing: 10px;
+                            Text { text: I18n.theme-align-label; color: Theme.text-dim; font-size: 11px; }
+                            HorizontalBox {
+                                spacing: 4px; alignment: start;
+                                SecondaryButton { text: "L"; clicked => { root.align-picked("left"); } }
+                                SecondaryButton { text: "C"; clicked => { root.align-picked("center"); } }
+                                SecondaryButton { text: "R"; clicked => { root.align-picked("right"); } }
+                            }
+                            Text { text: I18n.theme-text-color-label; color: Theme.text-dim; font-size: 11px; }
+                            ColorField {
+                                value: root.edit-text-color; hex: root.edit-text-hex;
+                                hex-edited(t) => { root.text-hex-edited(t); }
+                                preset-picked(c) => { root.text-preset(c); }
+                            }
+                            Text { text: I18n.theme-bg-color-label; color: Theme.text-dim; font-size: 11px; }
+                            ColorField {
+                                value: root.edit-bg-color; hex: root.edit-bg-hex;
+                                hex-edited(t) => { root.bg-hex-edited(t); }
+                                preset-picked(c) => { root.bg-preset(c); }
+                            }
                         }
                     }
                 }
             }
-            HorizontalBox {
-                spacing: 24px;
-                VerticalBox {
-                    spacing: 10px;
-                    Text { text: I18n.theme-name-label; color: Theme.text-dim; font-size: 11px; }
-                    LineEdit { text <=> root.edit-name; }
-                    Text { text: I18n.theme-font-label; color: Theme.text-dim; font-size: 11px; }
-                    ComboBox { model: root.font-families; current-index <=> root.edit-font-index;
-                        selected => { root.font-picked(self.current-index); } }
-                    Text { text: I18n.theme-weight-label; color: Theme.text-dim; font-size: 11px; }
-                    ComboBox { model: root.weight-options; current-index <=> root.edit-weight-index;
-                        selected => { root.weight-picked(self.current-index); } }
-                    Text { text: I18n.theme-size-label; color: Theme.text-dim; font-size: 11px; }
-                    HorizontalBox {
-                        spacing: 8px;
-                        Slider { minimum: 12; maximum: 120; value: root.edit-font-size;
-                            changed(v) => { root.size-changed(v); } }
-                        Text { text: Math.round(root.edit-font-size); color: Theme.text;
-                            vertical-alignment: center; width: 30px; }
-                    }
-                }
-                VerticalBox {
-                    spacing: 10px;
-                    Text { text: I18n.theme-align-label; color: Theme.text-dim; font-size: 11px; }
-                    HorizontalBox {
-                        spacing: 4px; alignment: start;
-                        SecondaryButton { text: "L"; clicked => { root.align-picked("left"); } }
-                        SecondaryButton { text: "C"; clicked => { root.align-picked("center"); } }
-                        SecondaryButton { text: "R"; clicked => { root.align-picked("right"); } }
-                    }
-                    Text { text: I18n.theme-text-color-label; color: Theme.text-dim; font-size: 11px; }
-                    ColorField {
-                        value: root.edit-text-color; hex: root.edit-text-hex;
-                        hex-edited(t) => { root.text-hex-edited(t); }
-                        preset-picked(c) => { root.text-preset(c); }
-                    }
-                    Text { text: I18n.theme-bg-color-label; color: Theme.text-dim; font-size: 11px; }
-                    ColorField {
-                        value: root.edit-bg-color; hex: root.edit-bg-hex;
-                        hex-edited(t) => { root.bg-hex-edited(t); }
-                        preset-picked(c) => { root.bg-preset(c); }
-                    }
-                }
-            }
-            Rectangle { }
+            // Pinned footer — always visible.
             HorizontalBox {
                 alignment: end;
                 PrimaryButton { text: I18n.theme-save; clicked => { root.save-theme(); } }
