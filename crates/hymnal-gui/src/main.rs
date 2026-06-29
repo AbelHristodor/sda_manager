@@ -384,6 +384,7 @@ fn main() -> anyhow::Result<()> {
     let s_ready = strings.borrow().status_library_ready.clone();
     let s_uptodate = strings.borrow().update_up_to_date.clone();
     let s_updatefail = strings.borrow().update_failed.clone();
+    let s_unavailable = strings.borrow().update_unavailable.clone();
     let s_staged = strings.borrow().update_staged_fmt.clone();
     let weak = ui.as_weak();
     std::thread::spawn(move || {
@@ -432,6 +433,11 @@ fn main() -> anyhow::Result<()> {
                 let _ = weak.upgrade_in_event_loop(move |ui| {
                     ui.set_update_status(msg.into());
                 });
+            }
+            Ok(hymnal_core::update::UpdateOutcome::CheckUnavailable) => {
+                // Transient (offline / GitHub rate limit). Expected — log quietly.
+                debug!("update check unavailable (transient: offline or rate-limited)");
+                let _ = weak.upgrade_in_event_loop(move |ui| ui.set_update_status(s_unavailable.into()));
             }
             Err(e) => {
                 warn!("update check failed: {e}");

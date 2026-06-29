@@ -123,6 +123,7 @@ pub struct Strings {
     pub update_checking: String,
     pub update_up_to_date: String,
     pub update_failed: String,
+    pub update_unavailable: String,
     pub status_synced_fmt: String,      // one `{}` = hymn count
     pub status_sync_failed_fmt: String, // one `{}` = error
     pub update_staged_fmt: String,      // one `{}` = version
@@ -204,6 +205,7 @@ impl Strings {
             &self.update_checking,
             &self.update_up_to_date,
             &self.update_failed,
+            &self.update_unavailable,
             &self.status_synced_fmt,
             &self.status_sync_failed_fmt,
             &self.update_staged_fmt,
@@ -276,6 +278,7 @@ impl Strings {
             update_checking: "Checking for updates…".into(),
             update_up_to_date: "Up to date.".into(),
             update_failed: "Update check failed.".into(),
+            update_unavailable: "Couldn't check for updates — try later.".into(),
             status_synced_fmt: "Synced — indexed {} hymns.".into(),
             status_sync_failed_fmt: "Sync failed: {}".into(),
             update_staged_fmt: "Update {} staged — restart to apply.".into(),
@@ -348,6 +351,7 @@ impl Strings {
             update_checking: "Ricerca aggiornamenti…".into(),
             update_up_to_date: "Aggiornato.".into(),
             update_failed: "Controllo aggiornamenti non riuscito.".into(),
+            update_unavailable: "Impossibile controllare gli aggiornamenti — riprova più tardi.".into(),
             status_synced_fmt: "Sincronizzato — {} inni indicizzati.".into(),
             status_sync_failed_fmt: "Sincronizzazione non riuscita: {}".into(),
             update_staged_fmt: "Aggiornamento {} pronto — riavvia per applicarlo.".into(),
@@ -420,6 +424,7 @@ impl Strings {
             update_checking: "Se caută actualizări…".into(),
             update_up_to_date: "La zi.".into(),
             update_failed: "Verificarea actualizărilor a eșuat.".into(),
+            update_unavailable: "Nu s-au putut verifica actualizările — încearcă mai târziu.".into(),
             status_synced_fmt: "Sincronizat — {} imnuri indexate.".into(),
             status_sync_failed_fmt: "Sincronizare eșuată: {}".into(),
             update_staged_fmt: "Actualizarea {} este pregătită — repornește pentru a o aplica.".into(),
