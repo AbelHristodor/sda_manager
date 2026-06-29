@@ -4,7 +4,7 @@ members = ["crates/hymnal-core", "crates/hymnal-gui"]
 
 [workspace.package]
 edition = "2021"
-version = "0.1.0"
+version = "1.0.2"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
