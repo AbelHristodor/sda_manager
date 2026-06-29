@@ -1047,7 +1047,12 @@ fn main() -> anyhow::Result<()> {
         ui.on_set_active(move || {
             let Some(ui) = weak.upgrade() else { return };
             let idx = ui.get_selected_index().max(0) as usize;
-            if let Some(t) = themes.borrow().get(idx).cloned() {
+            // Bind the clone in a `let` so the immutable `themes` borrow is
+            // released before `refresh_theme_list` takes a mutable borrow. An
+            // `if let themes.borrow()...` would hold the borrow across the whole
+            // block (edition 2021 temporary lifetime) and double-borrow-panic.
+            let selected = themes.borrow().get(idx).cloned();
+            if let Some(t) = selected {
                 *active_theme.borrow_mut() = t.clone();
                 if let Some(p) = hymnal_core::library::config_path() {
                     let mut cfg = Config::load(&p).unwrap_or_default();
